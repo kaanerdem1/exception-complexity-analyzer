@@ -1,0 +1,479 @@
+# Risk modeli — konfig + sade dil. Varsayılan: enterprise-java (CLI profil vermezsen de bu yüklenir).
+# Okuma rehberi: docs/risk-hesaplama-tr.md
+
+version: proposal-2026-03
+profile_default: enterprise-java
+
+# ---------------------------------------------------------------------------
+# Skor nasıl birleşir? (metod)
+# ---------------------------------------------------------------------------
+explainable_model:
+  summary_tr: >
+    Her metod için dört boyut ölçülür. Her boyut 0–1 alt skor üretir.
+    En yüksek alt skor metodun ana riskidir; diğerleri skora %15 oranında karışır.
+  steps_tr:
+    - id: measure
+      text: "CC, kod satırı, iç içe derinlik ve parametre sayısını say."
+    - id: subscores
+      text: "Her boyutu dikkat / yüksek / kritik eşiklerine göre 0–1 alt skora çevir."
+    - id: dominant
+      text: "Dört alt skordan en büyüğünü seç; risk seviyesi önce buna göre etiketlenir."
+    - id: blend
+      text: "Ağırlıklı ortalama alt skor hesapla; final = dominant + (karışım_oranı × blend), seviye tavanına sıkıştır."
+  level_bands_tr:
+    DÜŞÜK: "Skor 0 – 29,999 — tipik getter, delegasyon, basit validasyon"
+    ORTA: "30 – 49,999 — refactor planlanabilir; code review'da not düş"
+    YÜKSEK: "50 – 79,999 — test ve sadeleştirme öncelikli"
+    KRİTİK: "80 – 100 — parçala / acil müdahale adayı"
+  score_scale: 100
+  score_mix:
+    dominant_weight: 0.65
+    blend_weight: 0.35
+    note_tr: >
+      final = 58% * max(risk boyutları alt skorları) + 42% * ağırlıklı ortalama + ince ayırıcı (0–100, 3 ondalık).
+      FOUT skora dahil değildir (katalog metriği).
+      Aynı ham metrik vektörü olmadıkça iki metodun skoru çakışmaz.
+  blend:
+    ratio: 0.42
+    note_tr: "Geriye dönük: score_mix yoksa dominant=1-ratio, blend=ratio."
+
+# Kısa metodlarda final skor tavanı (parser + PMD). Ham boyut skoru yüksek olsa bile uygulanır.
+method_loc_score_caps:
+  - max_code_lines: 5
+    max_score: 25
+  - max_code_lines: 10
+    max_score: 35
+  - max_code_lines: 15
+    max_score: 45
+
+# ---------------------------------------------------------------------------
+# Boyut şablonu (profiller bunu override eder)
+# ---------------------------------------------------------------------------
+dimension_template:
+  branching:
+    id: branching
+    field: cyclomaticComplexity
+    label_tr: "Dallanma karmaşıklığı (CC)"
+    measures_tr: "if, else, for, while, catch, &&, ||, switch kolu vb. karar noktaları"
+    service_examples_tr:
+      - "Tek if'li facade metodu → düşük"
+      - "Kural motoru / çok dallı ETL → yüksek"
+    threshold_labels: [dikkat, yuksek, kritik]
+    subscore_meaning_tr:
+      below_dikkat: "Alt skor ~0–0.29; ek risk sayılmaz"
+      dikkat_to_yuksek: "Alt skor ~0.30–0.49; Sonar/PMD 'complexity' uyarısına denk gelir"
+      yuksek_to_kritik: "Alt skor ~0.50–0.79; refactor backlog"
+      above_kritik: "Alt skor 0.80+; metod bölünmeli"
+  length:
+    id: length
+    field: codeLines
+    label_tr: "Metod kod satırı (LOC)"
+    measures_tr: "Yorum ve boş satır hariç gerçek kod satırları"
+    service_examples_tr:
+      - "15–20 satırlık servis metodu → mock'ta tipik"
+      - "100+ satır tek metod → god-method adayı"
+    threshold_labels: [dikkat, yuksek, kritik]
+  nesting:
+    id: nesting
+    field: maxNestingDepth
+    label_tr: "İç içe blok derinliği"
+    measures_tr: "if/for/while/try/switch iç içe kaç kat"
+    service_examples_tr:
+      - "Düz akış, early return → 0–3"
+      - "Legacy ETL iç içe if/for → 5+ sık görülür"
+    threshold_labels: [dikkat, yuksek, kritik]
+  parameters:
+    id: parameters
+    field: parameterCount
+    label_tr: "Parametre sayısı"
+    measures_tr: "Metod imzasındaki parametre adedi"
+    service_examples_tr:
+      - "DTO + id → 1–2 parametre"
+      - "7+ parametre → DTO veya builder öner"
+    threshold_labels: [dikkat, yuksek, kritik]
+
+# ---------------------------------------------------------------------------
+# Profiller — sayılar + kısa politika cümlesi
+# ---------------------------------------------------------------------------
+profiles:
+  enterprise-java-pre202603:
+    model_version: v3
+    score_mix:
+      dominant_weight: 0.58
+      blend_weight: 0.42
+    policy_tr: "2026-03 öncesi enterprise-java (karşılaştırma / golden referans)."
+    dimensions:
+      branching:
+        thresholds: { dikkat: 4, yuksek: 9, kritik: 12 }
+      length:
+        thresholds: { dikkat: 12, yuksek: 20, kritik: 27 }
+      nesting:
+        thresholds: { dikkat: 1, yuksek: 3, kritik: 5 }
+      parameters:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 4 }
+      cognitive:
+        thresholds: { dikkat: 3, yuksek: 15, kritik: 15 }
+      exitPoints:
+        thresholds: { dikkat: 1, yuksek: 5, kritik: 6 }
+      logicalStatements:
+        thresholds: { dikkat: 8, yuksek: 21, kritik: 21 }
+      lambdaCount:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 1 }
+      switchCases:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 3 }
+      maxTryNestingDepth:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 0 }
+      localVariableCount:
+        thresholds: { dikkat: 1, yuksek: 4, kritik: 5 }
+      maxMethodCallChainLength:
+        thresholds: { dikkat: 1, yuksek: 3, kritik: 3 }
+      catchClauses:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 0 }
+      emptyCatchBlocks:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 0 }
+      catchExceptionOrThrowable:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 0 }
+      catchWithOnlyPrintStackTrace:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 0 }
+      primitiveObsessionIndex:
+        thresholds: { dikkat: 4, yuksek: 12, kritik: 12 }
+      maxBooleanOperatorsInCondition:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 1 }
+      halsteadDifficulty:
+        thresholds: { dikkat: 10, yuksek: 20, kritik: 40 }
+      halsteadEffort:
+        thresholds: { dikkat: 3000, yuksek: 10000, kritik: 50000 }
+      rawTypeUsage:
+        thresholds: { dikkat: 1, yuksek: 3, kritik: 8 }
+      stringConcatInLoop:
+        thresholds: { dikkat: 1, yuksek: 3, kritik: 6 }
+      hardcodedLiteralCount:
+        thresholds: { dikkat: 1, yuksek: 2, kritik: 5 }
+      swallowedExceptionSmells:
+        thresholds: { dikkat: 1, yuksek: 2, kritik: 4 }
+      genericExceptionSmells:
+        thresholds: { dikkat: 1, yuksek: 3, kritik: 6 }
+    class_dimensions:
+      publicMethodCount:
+        thresholds: { dikkat: 1, yuksek: 6, kritik: 6 }
+      efferentCouplingProxy:
+        thresholds: { dikkat: 1, yuksek: 7, kritik: 12 }
+      efferentTypeCount:
+        thresholds: { dikkat: 8, yuksek: 15, kritik: 30 }
+      lcom3Index:
+        thresholds: { dikkat: 100, yuksek: 150, kritik: 200 }
+      halsteadEffortClass:
+        thresholds: { dikkat: 20000, yuksek: 80000, kritik: 300000 }
+      godClassIndicator:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 1 }
+    blend_weights:
+      branching: 0.17
+      nesting: 0.14
+      length: 0.07
+      parameters: 0.05
+      cognitive: 0.11
+      exitPoints: 0.04
+      logicalStatements: 0.06
+      lambdaCount: 0.03
+      switchCases: 0.04
+      maxTryNestingDepth: 0.03
+      localVariableCount: 0.04
+      maxMethodCallChainLength: 0.04
+      catchClauses: 0.03
+      emptyCatchBlocks: 0.03
+      catchExceptionOrThrowable: 0.02
+      catchWithOnlyPrintStackTrace: 0.02
+      primitiveObsessionIndex: 0.04
+      maxBooleanOperatorsInCondition: 0.04
+      halsteadDifficulty: 0.04
+      halsteadEffort: 0.04
+      rawTypeUsage: 0.03
+      stringConcatInLoop: 0.03
+      hardcodedLiteralCount: 0.03
+      swallowedExceptionSmells: 0.03
+      genericExceptionSmells: 0.02
+    class_blend_weights:
+      publicMethodCount: 0.25
+      efferentCouplingProxy: 0.25
+      efferentTypeCount: 0.15
+      lcom3Index: 0.15
+      halsteadEffortClass: 0.10
+      godClassIndicator: 0.10
+
+  enterprise-java:
+    model_version: v3-calibrated-loc-cap-25
+    score_mix:
+      dominant_weight: 0.65
+      blend_weight: 0.35
+    policy_tr: >
+      2026-10: mock-modules + CCRM 8 modül (12228 metod JSON) yüzdelik kalibrasyonu.
+      Parametre eşiği yükseltildi (v1 gürültüsü). lambda/switch skor blend’inde minimize.
+      Kokular (hardcoded/rawType) grup ağırlığı artırıldı; Halstead yalnız effort ile gruplanır.
+      FOUT skora girmez.
+    dimension_groups:
+      structure:
+        weight: 0.40
+        members: [branching, cognitive, nesting, logicalStatements, exitPoints]
+      size:
+        weight: 0.11
+        members: [length, parameters, localVariableCount]
+      control_flow:
+        weight: 0.07
+        members: [maxTryNestingDepth, catchClauses, emptyCatchBlocks, catchExceptionOrThrowable, catchWithOnlyPrintStackTrace]
+      style:
+        weight: 0.10
+        members: [maxMethodCallChainLength, primitiveObsessionIndex, maxBooleanOperatorsInCondition]
+      smells:
+        weight: 0.20
+        members: [rawTypeUsage, stringConcatInLoop, hardcodedLiteralCount, swallowedExceptionSmells, genericExceptionSmells]
+      halstead:
+        weight: 0.12
+        members: [halsteadEffort]
+    dimensions:
+      branching:
+        thresholds: { dikkat: 4, yuksek: 10, kritik: 24 }
+        when_tr:
+          - "CC ≤ 10 → genelde sakin servis metodu"
+          - "CC 11–15 → orchestrator / kural metodu; ORTA–YÜKSEK bandı"
+          - "CC > 25 → dev metod adayı"
+      length:
+        thresholds: { dikkat: 24, yuksek: 45, kritik: 110 }
+        when_tr:
+          - "p75=35 satır (services+mock); 80+ prosedürel şişme"
+      nesting:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 5 }
+      parameters:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 6 }
+      cognitive:
+        thresholds: { dikkat: 5, yuksek: 18, kritik: 47 }
+      exitPoints:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 6 }
+      logicalStatements:
+        thresholds: { dikkat: 14, yuksek: 32, kritik: 86 }
+      lambdaCount:
+        thresholds: { dikkat: 99, yuksek: 99, kritik: 99 }
+      switchCases:
+        thresholds: { dikkat: 99, yuksek: 99, kritik: 99 }
+      maxTryNestingDepth:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      localVariableCount:
+        thresholds: { dikkat: 8, yuksek: 17, kritik: 27 }
+      maxMethodCallChainLength:
+        thresholds: { dikkat: 2, yuksek: 3, kritik: 4 }
+      catchClauses:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      emptyCatchBlocks:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      catchExceptionOrThrowable:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      catchWithOnlyPrintStackTrace:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      primitiveObsessionIndex:
+        thresholds: { dikkat: 14, yuksek: 19, kritik: 20 }
+      maxBooleanOperatorsInCondition:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      halsteadDifficulty:
+        thresholds: { dikkat: 14, yuksek: 28, kritik: 37 }
+      halsteadEffort:
+        thresholds: { dikkat: 2032, yuksek: 14251, kritik: 17375 }
+      rawTypeUsage:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      stringConcatInLoop:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      hardcodedLiteralCount:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      swallowedExceptionSmells:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      genericExceptionSmells:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+    class_dimensions:
+      publicMethodCount:
+        thresholds: { dikkat: 1, yuksek: 6, kritik: 6 }
+      efferentCouplingProxy:
+        thresholds: { dikkat: 1, yuksek: 7, kritik: 12 }
+      efferentTypeCount:
+        thresholds: { dikkat: 8, yuksek: 15, kritik: 30 }
+      lcom3Index:
+        thresholds: { dikkat: 100, yuksek: 150, kritik: 200 }
+      halsteadEffortClass:
+        thresholds: { dikkat: 20000, yuksek: 80000, kritik: 300000 }
+      godClassIndicator:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 1 }
+    blend_weights:
+      branching: 0.18
+      nesting: 0.14
+      length: 0.08
+      parameters: 0.03
+      cognitive: 0.12
+      exitPoints: 0.04
+      logicalStatements: 0.06
+      lambdaCount: 0.005
+      switchCases: 0.005
+      maxTryNestingDepth: 0.025
+      localVariableCount: 0.035
+      maxMethodCallChainLength: 0.045
+      catchClauses: 0.025
+      emptyCatchBlocks: 0.025
+      catchExceptionOrThrowable: 0.02
+      catchWithOnlyPrintStackTrace: 0.015
+      primitiveObsessionIndex: 0.045
+      maxBooleanOperatorsInCondition: 0.04
+      halsteadDifficulty: 0.01
+      halsteadEffort: 0.055
+      rawTypeUsage: 0.04
+      stringConcatInLoop: 0.005
+      hardcodedLiteralCount: 0.05
+      swallowedExceptionSmells: 0.015
+      genericExceptionSmells: 0.035
+    class_blend_weights:
+      publicMethodCount: 0.25
+      efferentCouplingProxy: 0.25
+      efferentTypeCount: 0.15
+      lcom3Index: 0.15
+      halsteadEffortClass: 0.10
+      godClassIndicator: 0.10
+    god_method:
+      label_tr: "Dev metod uyarısı (skordan bağımsız bayrak)"
+      rules_tr:
+        - "Kod satırı kritik eşiğin üstündeyse"
+        - "VEYA CC kritik eşiğin üstündeyse"
+        - "VEYA metod hem uzun (yüksek LOC) hem karmaşık (yüksek CC) veya çok parametreli"
+
+  # run-pmd-analyze varsayılanı — PMD JavaMetrics + AST sayaç + ruleset; parser boyutu yok
+  enterprise-java-pmd:
+    model_version: v3-pmd-native-loc-cap-25
+    score_mix:
+      dominant_weight: 0.67
+      blend_weight: 0.33
+    policy_tr: >
+      PMD-only tarama: CC/cog PMD JavaMetrics; LOC≈NCSS; Halstead PMD AST (×1.52 kalibrasyon);
+      kokular ruleset + AST. FOUT/call-chain skora girmez; primitiveObsession yalnızca PMD kuralları proxy.
+    dimension_groups:
+      structure:
+        weight: 0.44
+        members: [branching, cognitive, nesting, logicalStatements, exitPoints, maxBooleanOperatorsInCondition]
+      size:
+        weight: 0.12
+        members: [length, parameters, localVariableCount]
+      control_flow:
+        weight: 0.11
+        members: [maxTryNestingDepth, catchClauses, emptyCatchBlocks, catchExceptionOrThrowable, catchWithOnlyPrintStackTrace]
+      smells:
+        weight: 0.18
+        members: [rawTypeUsage, stringConcatInLoop, hardcodedLiteralCount, swallowedExceptionSmells, genericExceptionSmells, primitiveObsessionIndex]
+      halstead:
+        weight: 0.15
+        members: [halsteadEffort]
+    dimensions:
+      branching:
+        thresholds: { dikkat: 4, yuksek: 10, kritik: 24 }
+      length:
+        thresholds: { dikkat: 17, yuksek: 36, kritik: 84 }
+      nesting:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 5 }
+      parameters:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 6 }
+      cognitive:
+        thresholds: { dikkat: 5, yuksek: 18, kritik: 47 }
+      exitPoints:
+        thresholds: { dikkat: 2, yuksek: 4, kritik: 6 }
+      logicalStatements:
+        thresholds: { dikkat: 12, yuksek: 28, kritik: 78 }
+      maxTryNestingDepth:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      localVariableCount:
+        thresholds: { dikkat: 8, yuksek: 17, kritik: 27 }
+      maxBooleanOperatorsInCondition:
+        thresholds: { dikkat: 1, yuksek: 3, kritik: 5 }
+      catchClauses:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      emptyCatchBlocks:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      catchExceptionOrThrowable:
+        thresholds: { dikkat: 0, yuksek: 1, kritik: 2 }
+      catchWithOnlyPrintStackTrace:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      halsteadEffort:
+        thresholds: { dikkat: 1050, yuksek: 7200, kritik: 9200 }
+      primitiveObsessionIndex:
+        thresholds: { dikkat: 1, yuksek: 2, kritik: 4 }
+      rawTypeUsage:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      stringConcatInLoop:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      hardcodedLiteralCount:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      swallowedExceptionSmells:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+      genericExceptionSmells:
+        thresholds: { dikkat: 1, yuksek: 1, kritik: 2 }
+    class_dimensions:
+      godClassIndicator:
+        thresholds: { dikkat: 0, yuksek: 0, kritik: 1 }
+    blend_weights:
+      branching: 0.20
+      cognitive: 0.14
+      nesting: 0.14
+      logicalStatements: 0.08
+      exitPoints: 0.05
+      maxBooleanOperatorsInCondition: 0.05
+      length: 0.10
+      parameters: 0.04
+      localVariableCount: 0.05
+      maxTryNestingDepth: 0.04
+      catchClauses: 0.04
+      emptyCatchBlocks: 0.04
+      catchExceptionOrThrowable: 0.03
+      catchWithOnlyPrintStackTrace: 0.03
+      halsteadEffort: 0.11
+      rawTypeUsage: 0.05
+      stringConcatInLoop: 0.02
+      hardcodedLiteralCount: 0.06
+      swallowedExceptionSmells: 0.03
+      genericExceptionSmells: 0.05
+      primitiveObsessionIndex: 0.04
+    class_blend_weights:
+      godClassIndicator: 1.0
+    god_method:
+      label_tr: "Dev metod (PMD LOC/CC eşikleri)"
+      rules_tr:
+        - "NCSS/LOC kritik eşik üstü"
+        - "VEYA CC kritik eşik üstü"
+
+  strict-review:
+    policy_tr: "PR veya ödeme/kritik modül gate — daha erken uyar."
+    dimensions:
+      branching: { thresholds: { dikkat: 8, yuksek: 12, kritik: 20 } }
+      length: { thresholds: { dikkat: 20, yuksek: 40, kritik: 80 } }
+      nesting: { thresholds: { dikkat: 2, yuksek: 4, kritik: 6 } }
+      parameters: { thresholds: { dikkat: 3, yuksek: 5, kritik: 7 } }
+    blend_weights: { branching: 0.45, nesting: 0.28, length: 0.17, parameters: 0.10 }
+
+  generated-tolerant:
+    policy_tr: "Üretilmiş SQL/string; yalnızca uç değerler alarm."
+    dimensions:
+      branching: { thresholds: { dikkat: 15, yuksek: 25, kritik: 40 } }
+      length: { thresholds: { dikkat: 80, yuksek: 150, kritik: 300 } }
+      nesting: { thresholds: { dikkat: 4, yuksek: 6, kritik: 9 } }
+      parameters: { thresholds: { dikkat: 6, yuksek: 8, kritik: 12 } }
+    blend_weights: { branching: 0.35, nesting: 0.25, length: 0.25, parameters: 0.15 }
+
+project_dashboard_tr:
+  projectRiskScore: "Tüm metodların ortalama riski (LOC ağırlıklı) — büyük repoda alçak görünür"
+  methodRiskScoreP95: "En kötü %5 metodun risk seviyesi — servis kuyruğu"
+  highPlusCriticalLocRatio: "Kod satırlarının ne kadarı riskli metodların içinde"
+  criticalMethodsPerKloc: "1000 kod satırında kaç KRİTİK metod"
+
+implementation_v2:
+  - "--risk-profile=enterprise-java"
+  - "YAML dimensions → RiskCalculator"
+  - "plain_language → Markdown rapor 'Model' bölümü"
+
+# Kalibrasyon notları: mock-modules + kurumsal JSON yüzdelikleri (2026).
+scan_calibration:
+  source: analysis-output/combined-calibration-suggestion.md
+  ccrm_json_2026_10: scripts/ccrm-json-calibration.md
+  tool: "CCRM analyzer JSON (12228 metod) + mock-modules"
+  baseline_profile: enterprise-java-pre202603
+  locked_profile: enterprise-java
+  note_tr: "p75/p90/p95 + dimension_groups; services markdown legacy sütunları 0 ise Halstead/koku eşiklerini fix sonrası yeniden üret."

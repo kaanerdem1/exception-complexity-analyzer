@@ -1,0 +1,6 @@
+target/
+scannedRepos/
+scanReports/
+.DS_Store
+# Yerel PMD benchmark klonları ve çıktıları (git'e girmez)
+.pmd-bench/

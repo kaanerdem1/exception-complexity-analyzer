@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- REST API (sunucu modu) ve Swagger arayüzü için Spring Boot -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.example.tools</groupId>
+    <artifactId>system-code-analyzer</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>Exception-Complexity Analyzer</name>
+
+    <properties>
+        <!-- Uygulamanın kendi Java sürümü; taranan kodun Java 6 olması sorun değildir -->
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <springdoc.version>2.6.0</springdoc.version>
+        <pmd.version>7.29.0</pmd.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Konteyner liveness / readiness kontrolleri: /actuator/health/liveness, /actuator/health/readiness -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- Swagger arayüzü: /swagger-ui.html, OpenAPI dokümanı: /v3/api-docs -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>${springdoc.version}</version>
+        </dependency>
+        <!-- Java kaynak kodunu ayrıştırmak için (Java 6 kodunu da okur) -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.26.2</version>
+        </dependency>
+        <!-- Bitbucket REST cevaplarını okumak için -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- PostgreSQL envanter eşleştirmesi ve kayıt için (db.enabled=true) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.4</version>
+        </dependency>
+        <!-- Excel raporu için -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+        <!-- Kod karmaşıklığı analizi (com.scanner.complexity): JSON rapor, risk profili YAML'ı ve
+             PMD ile metrik / kopya kod tespiti. gson ve snakeyaml sürümleri Spring Boot'tan gelir -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>net.sourceforge.pmd</groupId>
+            <artifactId>pmd-core</artifactId>
+            <version>${pmd.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.sourceforge.pmd</groupId>
+            <artifactId>pmd-java</artifactId>
+            <version>${pmd.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Tüm bağımlılıklarla tek bir çalıştırılabilir jar üretir (target/system-code-analyzer-1.0.0.jar).
+                 Normalde komut satırı aracı olarak, server parametresiyle REST API olarak çalışır. -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.scanner.exception.ScannerApp</mainClass>
+                    <!-- mvn spring-boot:run sunucu modunda (Swagger) açılsın; jar'ın kendisini etkilemez -->
+                    <arguments>
+                        <argument>--server</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
