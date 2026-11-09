@@ -13,9 +13,6 @@ import net.sourceforge.pmd.lang.java.ast.ASTCompilationUnit;
 import net.sourceforge.pmd.lang.java.ast.ASTExecutableDeclaration;
 import net.sourceforge.pmd.lang.java.internal.JavaLanguageProcessor;
 import net.sourceforge.pmd.lang.java.internal.JavaLanguageProperties;
-import net.sourceforge.pmd.lang.java.metrics.JavaMetrics;
-import net.sourceforge.pmd.lang.metrics.Metric;
-import net.sourceforge.pmd.lang.metrics.MetricOptions;
 
 import java.math.BigInteger;
 
@@ -42,12 +39,16 @@ final class PmdMetricsAligner {
         }
     }
 
-    /** NPATH üstel; ağır metotta sayılmaz, tavan yazılır. */
-    static int safeNpath(ASTExecutableDeclaration exec, MetricOptions options, int cyclo) {
+    /**
+     * Dallanma 15 ve üstünde sayım yok, 2e9 yazılır.
+     * Altında PMD'nin kontrol akış sayacı yürür; yol sayısı skor tavanına varınca durur.
+     * Tavanın altı PMD ile aynı sayıdır. Tavan ve üstü bu kuralda zaten 0 puandır.
+     */
+    static int safeNpath(ASTExecutableDeclaration exec, int cyclo) {
         if (PmdHeavyMetricGuard.skipExplosiveMetrics(cyclo)) {
             return NPATH_CAP;
         }
-        return capNpath(Metric.compute(JavaMetrics.NPATH, exec, options));
+        return BoundedNPath.compute(exec);
     }
 
     static int capNpath(BigInteger npath) {

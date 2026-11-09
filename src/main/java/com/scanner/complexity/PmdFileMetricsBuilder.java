@@ -156,7 +156,7 @@ final class PmdFileMetricsBuilder {
             int cyclo = unboxOrZero(Metric.compute(JavaMetrics.CYCLO, exec, options));
             int ncss = unboxOrZero(Metric.compute(JavaMetrics.NCSS, exec, options));
             int cognitive = unboxOrZero(Metric.compute(JavaMetrics.COGNITIVE_COMPLEXITY, exec, options));
-            int npath = PmdMetricsAligner.safeNpath(exec, options, cyclo);
+            int npath = PmdMetricsAligner.safeNpath(exec, cyclo);
             PmdAstMethodStats.Stats stats = PmdAstMethodStats.analyze(exec);
             // Risk LOC = NCSS (yorum / boş satır hariç). physical satır aralığı yorumları da kapsar — skora girmez.
             int codeLines = ncss > 0 ? ncss : Math.max(countCodeLinesExcludingComments(sourceText, start, end), 1);
@@ -196,9 +196,7 @@ final class PmdFileMetricsBuilder {
             RiskLevel level = health.complexityLevel();
             List<String> factors = new ArrayList<>(health.notes());
             if (!trivialBody) {
-                factors.add(npath >= PmdMetricsAligner.NPATH_CAP
-                        ? "npath skora girdi (agir metot, tavan)"
-                        : "npath skora girdi=" + npath);
+                factors.add(npathFactor(cyclo, npath));
             }
             double quality = health.quality();
             boolean excluded = trivialBody;
@@ -248,8 +246,8 @@ final class PmdFileMetricsBuilder {
         int nestNominal = 25;
         double finalScore = RiskCalculator.SCORE_MAX;
         java.util.ArrayList<String> factors = new java.util.ArrayList<>();
-        factors.add("METRICS_IMPUTED=true: PMD/JVM could not complete this method (stack/heap); complexity set to 100; quality set to 0");
-        factors.add("PMD_ANALYSIS_INCOMPLETE: try -Xss/-Xmx or exclude; rerun with larger stack to obtain real metrics");
+        factors.add("METRICS_IMPUTED=true: bu metot bitirilemedi (yığın veya bellek). Karmaşıklık 100, kalite 0 yazıldı; gerçek ölçüm değildir.");
+        factors.add("PMD_ANALYSIS_INCOMPLETE: -Xss/-Xmx büyütün veya dosyayı hariç tutun. Daha geniş yığınla yeniden tarayınca gerçek metrik gelir.");
         boolean god = true;
 
         PmdSourceMethodHashes.Hashes hashes = PmdSourceMethodHashes.fromSourceSlice(sourceText, start, end);
@@ -274,12 +272,28 @@ final class PmdFileMetricsBuilder {
                 methodHash, reuse, List.of(), bodyHash, structuralOut, npath, ncss, true, 0, false);
     }
 
+    private static String npathFactor(int cyclo, int npath) {
+        int ceiling = BoundedNPath.scoreLimit();
+        if (npath >= PmdMetricsAligner.NPATH_CAP) {
+            return "npath: dallanma " + cyclo + " (>= " + PmdHeavyMetricGuard.CYCLO_HEAVY
+                    + "), sayım yapılmadı, tavan " + PmdMetricsAligner.NPATH_CAP
+                    + " yazıldı. Bu kural 0 puan. CC, cognitive, satır, derinlik ve parametre ölçüldü.";
+        }
+        if (npath >= ceiling) {
+            return "npath: yol sayısı skor tavanı " + ceiling
+                    + " değerine vardı, sayım durdu. Bu kural 0 puan. Daha büyük bir yol sayısı da aynı puanı verir.";
+        }
+        return "npath: ölçülen yol sayısı " + npath + " (skor tavanı " + ceiling + " altı, tam sayı).";
+    }
+
     private static String analysisFailureDetail(Throwable t) {
         if (t instanceof StackOverflowError) {
-            return "Analysis aborted: expression or AST nesting too deep (stack overflow)";
+            return "Yığın taştı (stack overflow): ifade veya AST çok derin. "
+                    + "Bu metot ölçülemedi; karmaşıklık 100, kalite 0 yazıldı. Dosyanın diğer metotları sürer.";
         }
         if (t instanceof OutOfMemoryError) {
-            return "Analysis aborted: out of memory while analyzing file";
+            return "Bellek yetmedi (out of memory): bu metot ölçülürken heap doldu. "
+                    + "Karmaşıklık 100, kalite 0 yazıldı. Dosyanın diğer metotları sürer.";
         }
         if (t == null) {
             return "unknown";

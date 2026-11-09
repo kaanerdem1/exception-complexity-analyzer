@@ -7,9 +7,9 @@
     <description>
         PMD ihlal listesi. Skor health-score-catalog.yaml motorunda,
         karmaşıklık ve kalite ayrı hesaplanır.
-        NPath her metotta JavaMetrics ile ölçülür ve karmaşıklık skoruna girer.
-        NPathComplexity kuralı ruleset'te yoktur: ağır metotta taramayı kilitler.
-        Ağır metotta sayım yapılmaz, tavan değer skorlanır (çıktıda npathCapped).
+        NPath her metotta kontrol akış sayacıyla ölçülür ve karmaşıklık skoruna girer.
+        NPathComplexity kuralı ruleset'te yoktur.
+        Yol sayısı skor tavanına (200) varınca sayım durur. Dallanma 15 ve üstünde sayım yapılmaz (npathCapped).
         Hashtable/Vector/Date ve EJB kuralları katalogda yok.
     </description>
 

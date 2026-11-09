@@ -86,6 +86,16 @@ record ScanDiagnostics(
         }
         int syntax = byCat.getOrDefault(ScanErrorCategory.PARSE_SYNTAX.name(), 0);
         int lang = byCat.getOrDefault(ScanErrorCategory.PARSE_LANGUAGE_LEVEL.name(), 0);
+        int timedOut = byCat.getOrDefault(ScanErrorCategory.TIMEOUT.name(), 0);
+        int skippedStuck = byCat.getOrDefault(ScanErrorCategory.SKIPPED_AFTER_STUCK.name(), 0);
+        if (timedOut > 0) {
+            tips.add(timedOut + " dosya metrik süre aşımına takıldı. NPath skor tavanında durur; "
+                    + "süre başka bir metrik veya ayrıştırma için dolar. Dosya raporda başarısızdır, diğerleri yazılır.");
+        }
+        if (skippedStuck > 0) {
+            tips.add(skippedStuck + " dosya, takılan işçiler yüzünden ölçülmeden atlandı. "
+                    + "Biten dosyaların raporu durur; atlananlar hata listesindedir.");
+        }
         if (syntax + lang > 0) {
             tips.add("Parse hataları: LANGUAGE_LEVEL, encoding, bozuk kaynak dosyası.");
         }

@@ -5,8 +5,9 @@
 # 264 dosya, 3520 metot, 2026-11-09. CC 17, cognitive 21, satır 36 aynı koşunun p99'u.
 # p90 (5 / 5 / 10 / 4) ruleset'in ihlal çizgisinin altında kalıyordu; skor sıfır, ihlal henüz yok olurdu.
 # NPath skor tavanı 200. Sayılan metotların p99'u 16 idi; en yüksek sayılan yol 257.
-# 16, dört bağımsız if'te doluyordu. 200, sayılan aralığı ayırır. Dallanma 15 ve üstü sayılmaz;
-# yazılan tavan (2e9) bu kuralda 0 puandır ve gerçek yol sayısı da 200'ün çok üstündedir.
+# 16, dört bağımsız if'te doluyordu. 200, sayılan aralığı ayırır.
+# Sayım, yürüyen yol sayısı 200'e varınca durur ve 200 yazılır. 200 ve üstü bu kuralda 0 puandır;
+# tavanın altındaki sayı PMD ile aynıdır. Dallanma 15 ve üstü hiç sayılmaz, 2e9 yazılır, o da 0 puandır.
 
 version: health-v1
 priority_weights:

@@ -121,7 +121,17 @@ final class AnalysisConsoleLogger {
                 err.println(TAG + " ... " + (errors.size() - max) + " more (see report: unreadable files section)");
                 break;
             }
-            err.println(TAG + " " + e.file() + " [" + e.category().name() + "]: " + e.message());
+            String where = e.file();
+            if (e.className() != null && !e.className().isEmpty()) {
+                where += " " + e.className();
+            }
+            if (e.methodSignature() != null && !e.methodSignature().isEmpty()) {
+                where += "#" + e.methodSignature();
+            }
+            if (e.startLine() > 0) {
+                where += " satır " + e.startLine();
+            }
+            err.println(TAG + " " + where + " [" + e.category().labelTr() + "]: " + e.message());
             shown++;
         }
     }

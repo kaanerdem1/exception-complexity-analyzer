@@ -39,8 +39,8 @@ public final class PmdNativeProjectScanner {
             "PMD-only scan (ruleset + JavaMetrics + PMD AST stats)";
 
     private static final String CACHE_PIPELINE = "pmd-native";
-    /** Tek dosya PMD metriği bu süreyi aşarsa atlanır (NPATH kilitlenmesi). */
-    private static final long METRICS_FILE_TIMEOUT_SEC = 90;
+    /** Tek dosya PMD metriği bu süreyi aşarsa atlanır. NPath sayımı skor tavanında durur; bu süre başka bir takılma içindir. */
+    static final long METRICS_FILE_TIMEOUT_SEC = 90;
 
     private final Charset charset;
     private final ParserConfiguration.LanguageLevel languageLevel;
@@ -315,11 +315,9 @@ public final class PmdNativeProjectScanner {
                                 incrementalEngine, cacheCounters);
                     } catch (Throwable t) {
                         String relative = JavaSourceDiscovery.relativePath(base, src);
-                        String detail = metricsFailureDetail(t);
-                        System.err.printf(Locale.ROOT,
-                                "[PMD-NATIVE]   ADIM 4/7 dosya atlandı: %s — %s%n",
-                                relative, detail);
-                        errorSink.add(new FileError(relative, "PMD metrics: " + detail));
+                        String message = fileSkippedMessage(relative, metricsFailureDetail(t));
+                        System.err.println("[PMD-NATIVE]   ADIM 4/7 " + message);
+                        errorSink.add(new FileError(relative, message));
                     }
                     int n = processed.incrementAndGet();
                     int every = Math.max(1, scanOptions.progressEvery());
@@ -330,32 +328,32 @@ public final class PmdNativeProjectScanner {
                 }));
             }
             int stuckWorkers = 0;
+            List<String> stuckFiles = new ArrayList<>();
             for (int i = 0; i < futures.size(); i++) {
                 Future<Void> future = futures.get(i);
                 Path src = sources.get(i);
                 String relative = JavaSourceDiscovery.relativePath(base, src);
                 if (stuckWorkers >= workers) {
                     future.cancel(false);
-                    errorSink.add(new FileError(relative,
-                            "PMD metrics skipped: a previous file is stuck in NPath"));
+                    String message = metricsSkippedBecauseStuckMessage(relative, stuckWorkers, stuckFiles);
+                    System.err.println("[PMD-NATIVE]   ADIM 4/7 " + message);
+                    errorSink.add(new FileError(relative, message));
                     continue;
                 }
                 try {
                     future.get(METRICS_FILE_TIMEOUT_SEC, TimeUnit.SECONDS);
                 } catch (TimeoutException e) {
                     stuckWorkers++;
-                    System.err.printf(Locale.ROOT,
-                            "[PMD-NATIVE]   ADIM 4/7 zaman aşımı (%ds): %s — dosya atlandı%n",
-                            METRICS_FILE_TIMEOUT_SEC, relative);
-                    errorSink.add(new FileError(relative, "PMD metrics timeout " + METRICS_FILE_TIMEOUT_SEC + "s"));
+                    stuckFiles.add(relative);
+                    String message = metricsTimeoutMessage(relative, METRICS_FILE_TIMEOUT_SEC, stuckWorkers, workers);
+                    System.err.println("[PMD-NATIVE]   ADIM 4/7 " + message);
+                    errorSink.add(new FileError(relative, message));
                     future.cancel(false);
                 } catch (ExecutionException e) {
                     Throwable cause = e.getCause() != null ? e.getCause() : e;
-                    String detail = metricsFailureDetail(cause);
-                    System.err.printf(Locale.ROOT,
-                            "[PMD-NATIVE]   ADIM 4/7 dosya atlandı: %s — %s%n",
-                            relative, detail);
-                    errorSink.add(new FileError(relative, "PMD metrics: " + detail));
+                    String message = fileSkippedMessage(relative, metricsFailureDetail(cause));
+                    System.err.println("[PMD-NATIVE]   ADIM 4/7 " + message);
+                    errorSink.add(new FileError(relative, message));
                 }
             }
         } catch (InterruptedException e) {
@@ -410,23 +408,42 @@ public final class PmdNativeProjectScanner {
                 cacheCounters.methodsReanalyzed += metric.methodCount() - metric.methodsReusedFromCache();
             }
         } catch (Exception e) {
-            System.err.printf(Locale.ROOT,
-                    "[PMD-NATIVE]   ADIM 4/7 dosya atlandı: %s — %s%n", relative, describe(e));
-            errors.add(new FileError(relative, "PMD metrics: " + describe(e)));
+            String message = fileSkippedMessage(relative, describe(e));
+            System.err.println("[PMD-NATIVE]   ADIM 4/7 " + message);
+            errors.add(new FileError(relative, message));
         } catch (VirtualMachineError e) {
-            String detail = metricsFailureDetail(e);
-            System.err.printf(Locale.ROOT,
-                    "[PMD-NATIVE]   ADIM 4/7 dosya atlandı: %s — %s%n", relative, detail);
-            errors.add(new FileError(relative, "PMD metrics: " + detail));
+            String message = fileSkippedMessage(relative, metricsFailureDetail(e));
+            System.err.println("[PMD-NATIVE]   ADIM 4/7 " + message);
+            errors.add(new FileError(relative, message));
         }
+    }
+
+    static String fileSkippedMessage(String file, String detail) {
+        return file + " atlandı, tarama diğer dosyalarla sürer. Neden: " + detail;
+    }
+
+    static String metricsTimeoutMessage(String file, long seconds, int stuckWorkers, int workers) {
+        return "Metrik süre aşımı (" + seconds + " sn): " + file
+                + " ölçümü bitmedi, dosya atlandı ve raporda başarısız sayılır. Tarama diğer dosyalarla sürer. "
+                + "Takılan işçi " + stuckWorkers + "/" + workers
+                + ". NPath sayımı skor tavanında durur; bu süre başka bir metrik veya ayrıştırma takılırsa dolar.";
+    }
+
+    static String metricsSkippedBecauseStuckMessage(String file, int stuckWorkers, List<String> stuckFiles) {
+        return "Atlandı: " + file + " ölçülmedi. " + stuckWorkers
+                + " işçi metrikte takılı (süre " + METRICS_FILE_TIMEOUT_SEC + " sn). Takılan dosyalar: "
+                + String.join(", ", stuckFiles)
+                + ". Biten dosyaların raporu yazılır; bu dosya başarısız kaydıdır.";
     }
 
     private static String metricsFailureDetail(Throwable t) {
         if (t instanceof StackOverflowError) {
-            return "Analysis aborted: expression or AST nesting too deep (stack overflow)";
+            return "Yığın taştı (stack overflow): ifade veya AST iç içe geçmesi çok derin. "
+                    + "Bu dosya atlandı, diğer dosyalar taranmaya devam eder.";
         }
         if (t instanceof OutOfMemoryError) {
-            return "Analysis aborted: out of memory while analyzing file";
+            return "Bellek yetmedi (out of memory): bu dosya ölçülürken heap doldu. "
+                    + "Dosya atlandı. complexity.workers düşürülebilir veya heap büyütülebilir.";
         }
         return describe(t);
     }
