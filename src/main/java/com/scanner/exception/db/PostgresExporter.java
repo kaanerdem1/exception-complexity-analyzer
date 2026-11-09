@@ -1049,11 +1049,18 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
             new DbMatcher(db.caseInsensitive, db.constructorNames).resolveAll(refs, this);
         }
 
+        boolean qualityColumn = hasColumn(table, "quality_score");
+        if (!qualityColumn) {
+            ci.warnings.add(table + ".quality_score yok; sql/method_risk_quality_score.sql çalıştırılınca kalite skoru da yazılır");
+        }
         PreparedStatement ps = con.prepareStatement("INSERT INTO " + table
                 + " (scan_run_id, method_uid, file_path, class_name, method_signature, start_line, end_line, is_parser,"
-                + " is_pmd, ncss_loc, risk_score, risk_level, risk_inputs_json, body_hash, structural_hash, java_method_id,"
+                + " is_pmd, ncss_loc, risk_score, risk_level"
+                + (qualityColumn ? ", quality_score" : "")
+                + ", risk_inputs_json, body_hash, structural_hash, java_method_id,"
                 + " created_at" + (repoColumns ? ", project_key, repo" : "")
-                + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?,?,now()" + (repoColumns ? ",?,?" : "") + ")"
+                + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?" + (qualityColumn ? ",?" : "") + ",?::jsonb,?,?,?,now()"
+                + (repoColumns ? ",?,?" : "") + ")"
                 + " ON CONFLICT (scan_run_id, method_uid, is_parser, is_pmd) DO NOTHING");
         int count = 0;
         try {
@@ -1073,6 +1080,10 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
                 ps.setBigDecimal(i++, java.math.BigDecimal.valueOf(row.method.riskScore())
                         .setScale(2, java.math.RoundingMode.HALF_UP));
                 ps.setString(i++, row.method.riskLevel() == null ? null : row.method.riskLevel().name());
+                if (qualityColumn) {
+                    ps.setBigDecimal(i++, java.math.BigDecimal.valueOf(row.method.qualityScore())
+                            .setScale(2, java.math.RoundingMode.HALF_UP));
+                }
                 ps.setString(i++, com.scanner.complexity.ComplexityJson.riskInputs(report, row.method));
                 ps.setString(i++, row.method.bodyHash());
                 ps.setString(i++, row.method.structuralHash());

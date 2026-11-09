@@ -1,6 +1,28 @@
+# Derleme ve testler (uzak repoya gitmez)
 target/
-scannedRepos/
+src/test/
+*.class
+hs_err_pid*
+replay_pid*
+
+# Tarama çıktısı ve klonlar
 scanReports/
-.DS_Store
-# Yerel PMD benchmark klonları ve çıktıları (git'e girmez)
+scannedRepos/
+analysis-output/
+*.log
+
+# Yerel benchmark ve geçici örnekler
 .pmd-bench/
+
+# Ortam ve IDE
+.env
+.env.*
+*.local
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+Thumbs.db

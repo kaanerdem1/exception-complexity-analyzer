@@ -10,7 +10,7 @@ import java.util.Map;
 final class AnalyzerState {
 
     String lastScanTimestamp;
-    /** {@link ProjectAnalyzer} cache identity — mismatch invalidates cache automatically. */
+    /** {@link PmdNativeProjectScanner} cache identity — mismatch invalidates cache automatically. */
     String cacheIdentity;
     Map<String, FileState> files = new LinkedHashMap<>();
     /** Modül kökü (pom/Gradle) → dosya listesi byte-hash parmak izi. */
@@ -25,7 +25,7 @@ final class AnalyzerState {
      * normalised-body hash + last granular risk score) for quick inspection/diffing of the JSON
      * file; {@code cachedFileMetric} holds the full previous {@link AnalysisReport.FileMetric} so
      * a whole file — or an individual unchanged method inside a changed file — can be reused
-     * verbatim without re-running JavaParser or the risk algorithms. Method keys are
+     * verbatim without re-running PMD metrics. Method keys are
      * {@code "ClassName#signature"} (class-qualified, to avoid collisions between identically
      * named methods in different nested classes of the same file).
      */

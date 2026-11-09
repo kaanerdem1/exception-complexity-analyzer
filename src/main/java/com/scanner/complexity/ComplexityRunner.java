@@ -11,17 +11,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 /**
- * Code Scanner ile bu paketteki karmaşıklık analizörü arasındaki köprü: klonlanmış bir repoyu tarar, JSON ve
- * Markdown raporlarını yazar. Paketin geri kalanı github.com/kaanerdem1/java-code-analyzer (cleanup/slim-analyzer)
- * kodudur; sadece paket adı değişti.
- *
- * İki tarama yolu vardır (complexity.engine):
- *   PARSER : JavaParser ile tam metrik (ProjectAnalyzer), varsayılan risk profili enterprise-java
- *   PMD    : sadece PMD (ruleset + PMD AST / JavaMetrics, PmdNativeProjectScanner), profil enterprise-java-pmd
+ * Klonlanmış repoyu PMD ile tarar, JSON ve Markdown yazar.
+ * Skor: health-score-catalog.yaml (karmaşıklık ve kalite ayrı).
  */
 public final class ComplexityRunner {
 
-    public enum Engine { PARSER, PMD, BOTH }
+    public enum Engine { PMD }
 
     /** Bir yolun sonucu */
     public record Result(String engine, AnalysisReport report, Path json, Path markdown) {
@@ -38,26 +33,13 @@ public final class ComplexityRunner {
         this.cfg = cfg;
     }
 
-    /** complexity.engine'e göre çalıştırılacak yollar (sırayla; her yolun raporu bir sonrakinden önce bırakılır) */
     public java.util.List<Engine> engines() {
-        if (cfg.engine == Engine.BOTH) return java.util.List.of(Engine.PARSER, Engine.PMD);
-        return java.util.List.of(cfg.engine);
+        return java.util.List.of(Engine.PMD);
     }
 
-    /**
-     * Repoyu tek bir yolla tarar. Raporlar baseName + ".json/.md" (PMD için baseName + "-pmd.json/.md" ve
-     * "-pmd-violations.xml") olarak yazılır.
-     */
+    /** Raporlar baseName + "-pmd.json/.md" ve "-pmd-violations.xml". */
     public Result analyze(Path sourceRoot, Path baseName, Engine engine) throws IOException {
-        return engine == Engine.PMD ? pmd(sourceRoot, baseName) : parser(sourceRoot, baseName);
-    }
-
-    private Result parser(Path sourceRoot, Path baseName) throws IOException {
-        RiskCalculator risk = RiskProfileLoader.createCalculator(profile("enterprise-java"), null);
-        AnalysisReport report = new ProjectAnalyzer(cfg.charset, cfg.top, cfg.languageLevel,
-                options(cfg.fullDetail, baseName, Engine.PARSER), risk)
-                .analyze(sourceRoot, new ScanRunContext());
-        return write("parser", report, sibling(baseName, ".json"), sibling(baseName, ".md"));
+        return pmd(sourceRoot, baseName);
     }
 
     private Result pmd(Path sourceRoot, Path baseName) throws IOException {
@@ -97,7 +79,7 @@ public final class ComplexityRunner {
         ScanOptions d = ScanOptions.defaults();
         Path stateFile = null;
         if (cfg.incrementalCache) {
-            String suffix = engine == Engine.PMD ? "-pmd-analyzer-state.json" : "-parser-analyzer-state.json";
+            String suffix = "-pmd-analyzer-state.json";
             stateFile = persistentStateFile(baseName, suffix);
             try {
                 Path parent = stateFile.toAbsolutePath().getParent();
@@ -115,7 +97,7 @@ public final class ComplexityRunner {
                 fullDetail ? ScanOptions.ReportDetail.FULL : ScanOptions.ReportDetail.SUMMARY,
                 true, stateFile, cfg.freshCache, cfg.duplicates, d.minDuplicateTokens(),
                 cfg.duplicates && cfg.nearDuplicates,
-                d.nearDuplicateAutoSkipMinFiles(), false, d.pmdMetricAlignment());
+                d.nearDuplicateAutoSkipMinFiles(), false);
     }
 
     /** complexity.risk.profile boşsa yolun kendi varsayılan profili */

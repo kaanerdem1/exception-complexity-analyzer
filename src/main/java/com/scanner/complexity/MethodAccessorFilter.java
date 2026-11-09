@@ -5,7 +5,7 @@ package com.scanner.complexity;
  */
 public final class MethodAccessorFilter {
 
-    /** Tek/çift satır get/set/is — JavaMetrics + RiskCalculator atlanır. */
+    /** Tek/çift satır get/set/is — JavaMetrics atlanır. */
     static final int MAX_TRIVIAL_PHYSICAL_LINES = 2;
     /** JSON / DB yayın eşiği (db.method.risk.min.score varsayılanı). */
     public static final double DEFAULT_PUBLISH_MIN_SCORE = 30;
@@ -56,6 +56,23 @@ public final class MethodAccessorFilter {
             return true;
         }
         return name.startsWith("set") && name.length() > 3 && params == 1;
+    }
+
+    /**
+     * PDF filtresi: get/set/is, 0 veya 1 parametre, gövde tek return ya da tek atama.
+     */
+    public static boolean isSingleStatementAccessor(String kind, String name, int parameterCount,
+                                                     int cyclomaticComplexity, int logicalStatements,
+                                                     int exitPoints, int catchClauses, int localVariableCount) {
+        if (!"METHOD".equals(kind) || !isAccessorName(name, parameterCount)) {
+            return false;
+        }
+        if (cyclomaticComplexity > 1 || catchClauses > 0 || localVariableCount > 0) {
+            return false;
+        }
+        boolean singleAssign = logicalStatements == 1 && exitPoints == 0;
+        boolean singleReturn = logicalStatements == 0 && exitPoints == 1;
+        return singleAssign || singleReturn;
     }
 
     /**

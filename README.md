@@ -427,19 +427,17 @@ Heap konteyner bellek limitinin %75'i olarak ayarlanır. Bitbucket'ın sertifika
 
 ## Kod karmaşıklığı analizi
 
-Exception taramasından sonra klonlanmış her repoda metot karmaşıklığı ve risk analizi yapılabilir: dallanma (CC), kod satırı, iç içe derinlik, okunabilirlik, Halstead, kod kokuları ve kopya kod (PMD CPD). Analizör `com.scanner.complexity` paketindedir; [java-code-analyzer](https://github.com/kaanerdem1/java-code-analyzer) projesinin `cleanup/slim-analyzer` dalının kodudur (sadece paket adı değişti). Bağlantıyı `ComplexityRunner` sınıfı kurar; risk profilleri `src/main/resources/config/risk-parameters-proposal.yaml`, PMD ruleset'i `src/main/resources/config/pmd-ruleset-complexity.xml` dosyasındadır.
+Exception taramasından sonra klonlanmış her repoda metot karmaşıklığı ve kalite analizi yapılabilir: dallanma (CC), cognitive, kod satırı, iç içe derinlik, NPath ve PMD ihlalleri. Skor `health-score-catalog.yaml` içindedir; karmaşıklık ve kalite ayrıdır. Analizör `com.scanner.complexity` paketindedir. Bağlantıyı `ComplexityRunner` sınıfı kurar; PMD ruleset'i `src/main/resources/config/pmd-ruleset-complexity.xml` dosyasındadır.
 
 `complexity.enabled=true` ya da `--complexity` ile açılır. Tarama nereden başlatılırsa başlatılsın (komut satırı, Swagger / REST, günlük otomatik tarama) analizin yapılıp yapılmayacağını bu tek ayar belirler; Swagger'dan bir defalığına `"properties": {"complexity.enabled": "true"}` ile de açılabilir. `exception.classes` boşsa sadece karmaşıklık analizi yapılır.
 
-**Şu an varsayılan:** `complexity.engine=pmd` (yalnızca PMD risk). Parser çalışmaz. `complexity.duplicates=false` — benzerlik / CPD yok (sonra açılacak).
+**Şu an:** karmaşıklık yalnızca PMD (`complexity.engine=pmd`). Skor `health-score-catalog.yaml`: karmaşıklık ve kalite ayrı. `complexity.duplicates=false` — benzerlik / CPD yok (sonra açılacak).
 
-İki tarama yolu vardır (`complexity.engine`):
+Tarama yolu:
 
-| Yol | Ne yapar | Varsayılan risk profili |
+| Yol | Ne yapar | Skor |
 |---|---|---|
-| `parser` (varsayılan) | JavaParser ile tam metrik | `enterprise-java` |
-| `pmd` | Sadece PMD: ruleset + PMD AST / JavaMetrics | `enterprise-java-pmd` |
-| `both` | İkisi de, ayrı raporlarla | |
+| `pmd` | Ruleset + PMD AST / JavaMetrics | `health-score-catalog.yaml` |
 
 Raporlar tarama klasöründe `complexity/` altına yazılır (sunucuda `GET /api/scans/{id}/files` ile listelenip indirilebilir):
 
@@ -461,7 +459,7 @@ Kontrol zinciri (üstten alta; biri koparsa incremental kapalıdır):
 | `Config.Complexity` (`src/main/java/com/scanner/exception/config/Config.java`) | `incrementalCache`, `freshCache` — `complexity.cache.enabled` / `complexity.cache.fresh` | `incrementalCache == false` |
 | `ComplexityRunner.options(...)` | State: `output.dir/analyzer-cache/<proje>/<repo>-pmd-analyzer-state.json` (tarihli `yyyyMMdd_HHmm` dışında) | `stateFile == null` veya `complexity.cache.enabled=false` |
 | `ScanOptions` | `incrementalStateFile()`, `ignoreIncrementalCache()` | path `null` veya `ignoreIncrementalCache==true` (`fresh`) |
-| `PmdNativeProjectScanner` / `ProjectAnalyzer` | `stateFile = scanOptions.incrementalStateFile()`; `incremental = stateFile != null` | `stateFile == null` |
+| `PmdNativeProjectScanner` | `stateFile = scanOptions.incrementalStateFile()`; `incremental = stateFile != null` | `stateFile == null` |
 | `IncrementalStateSupport.load/persist` | state oku/yaz; kimlik `schema` + `pipeline` + `profile` + `model` | `--fresh` / `ignoreCache` ise boş state (yine dosyaya yazılır) |
 | `IncrementalAnalysisEngine.checkFileCache` | dosya byte hash aynıysa metrik atla; PMD ruleset de değişen dosyalara iner | hash farklı veya önceki kayıt yok |
 
@@ -469,19 +467,11 @@ State dosyaları (veritabanında değil, rapor klasöründe): `complexity/<proje
 
 PMD stderr: `[PMD-NATIVE] ▶ ADIM 2/7` state okuma; özet satırında atlanan dosya sayısı. `Artımlı önbellek: KAPALI` görürsen `ComplexityRunner` path vermemiş veya `complexity.cache.enabled=false`.
 
-Klonlanamayan repolar atlanır; bir repoda analiz hata verirse diğerleri devam eder. `complexity.engine=both` ile iki yol sırayla çalışır, her yolun raporu bir sonraki başlamadan yazılıp bellekten bırakılır. "Java heap space" hatasında sırasıyla: `complexity.duplicates.near=false` (PMD CPD ile benzer kod tespiti tüm dosyaların token'larını bellekte tutar; birebir kopyalar yine bulunur), `complexity.workers=2` (bir repoda aynı anda ayrıştırılan dosya sayısı, varsayılan işlemci sayısı), `complexity.engine=parser`; yetmezse pod'a daha fazla bellek verin. Karmaşıklık analizi başlamadan exception bulguları (raporlara ve veritabanına yazılmış olarak) bellekten bırakılır. Test kaynakları varsayılan olarak hariçtir (`complexity.exclude=**/src/test/**`).
+Klonlanamayan repolar atlanır; bir repoda analiz hata verirse diğerleri devam eder. "Java heap space" hatasında `complexity.duplicates.near=false` ve `complexity.workers=2` deneyin; yetmezse pod bellekini artırın. Karmaşıklık analizi başlamadan exception bulguları bellekten bırakılır. Test kaynakları varsayılan olarak hariçtir (`complexity.exclude=**/src/test/**`).
 
-### Risk kalibrasyonu (kısa / basit metot)
+### Kısa metotlar
 
-`risk-parameters-proposal.yaml` içindeki `method_loc_score_caps` parser + PMD skoruna uygulanır (`RiskCalculator` → `RiskProfile.capMethodScoreByLoc`):
-
-| Kod satırı (NCSS) | Skor tavanı |
-|---|---|
-| ≤ 5 | **25** |
-| ≤ 10 | **35** |
-| ≤ 15 | **45** |
-
-5 satırlık basit bir metot 45–50 alamaz (en fazla 25). Getter/setter/is-accessor zaten rapor tablosu ve hotspot’tan çıkar (`MethodAccessorFilter`). 1–2 fiziksel satırlık get/set/is için `JavaMetrics` ve risk skoru üretilmez. PMD bool-op sayımı yalnızca if/loop koşulundadır.
+Skor `health-score-catalog.yaml`. Satır sayısına göre ayrı bir tavan uygulanmaz. Trivial get/set/is hem karmaşıklık hem kalite hesabından çıkar. JSON ve veritabanı, karmaşıklığı 30’un altındaki metotları yazmaz (`db.method.risk.min.score`). 1–2 fiziksel satırlık get/set/is için `JavaMetrics` üretilmez.
 
 ### PMD metrik hataları (stack / heap) ve JVM
 
@@ -501,7 +491,7 @@ Projede gömülü PMD sürümü **`pom.xml`** içindeki **`pmd.version`** ile sa
 
 `env.method_risk_analyze` ve analiz JSON’undaki `files[].classes[].methods` **yazılmaz** eğer:
 
-- `risk_score < db.method.risk.min.score` (varsayılan **30**, DÜŞÜK bant)
+- `risk_score < db.method.risk.min.score` (varsayılan **30**)
 - veya metot basit getter/setter (`MethodAccessorFilter`)
 
 `summary.methodCount` hâlâ tüm metotları sayar. 3+ satırlık `getCustomer()` gibi iş yapan metotlar ölçülür; skor ≥ 30 ise yazılır.

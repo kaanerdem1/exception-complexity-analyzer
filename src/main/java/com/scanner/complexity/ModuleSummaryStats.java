@@ -18,6 +18,11 @@ final class ModuleSummaryStats {
                 k -> new ModuleBucket()).add(method);
     }
 
+    void addClass(String moduleRoot, double complexity, double quality, int loc) {
+        buckets.computeIfAbsent(moduleRoot == null || moduleRoot.isBlank() ? "." : moduleRoot,
+                k -> new ModuleBucket()).addClass(complexity, quality, loc);
+    }
+
     List<ModuleRiskSummary> toSummaries() {
         List<ModuleRiskSummary> list = new ArrayList<>();
         for (Map.Entry<String, ModuleBucket> entry : buckets.entrySet()) {
@@ -35,6 +40,9 @@ final class ModuleSummaryStats {
         private final LongAdderCompat[] scoreBuckets = new LongAdderCompat[SCORE_BUCKETS];
         private double weightedScoreSum;
         private long weightedLocSum;
+        private double classComplexitySum;
+        private double classQualitySum;
+        private long classLocSum;
 
         ModuleBucket() {
             for (int i = 0; i < SCORE_BUCKETS; i++) {
@@ -56,15 +64,24 @@ final class ModuleSummaryStats {
             scoreBuckets[bucket].add(1);
         }
 
+        void addClass(double complexity, double quality, int loc) {
+            classComplexitySum += complexity * loc;
+            classQualitySum += quality * loc;
+            classLocSum += loc;
+        }
+
         ModuleRiskSummary toSummary(String moduleRoot) {
             long methods = methodCount.sum();
             long loc = codeLines.sum();
-            double locWeightedScore = weightedLocSum == 0 ? 0.0
-                    : RiskCalculator.roundScore(weightedScoreSum / weightedLocSum);
+            double locWeightedScore = classLocSum > 0
+                    ? RiskCalculator.roundScore(classComplexitySum / classLocSum)
+                    : (weightedLocSum == 0 ? 0.0 : RiskCalculator.roundScore(weightedScoreSum / weightedLocSum));
+            double locWeightedQuality = classLocSum == 0 ? 0.0
+                    : RiskCalculator.roundScore(classQualitySum / classLocSum);
             double criticalPerKloc = loc == 0 ? 0.0
                     : RiskCalculator.roundScore(criticalCount.sum() * 1000.0 / loc);
             return new ModuleRiskSummary(moduleRoot, (int) methods, (int) loc,
-                    locWeightedScore, percentile(0.95), criticalPerKloc);
+                    locWeightedScore, locWeightedQuality, percentile(0.95), criticalPerKloc);
         }
 
         private double percentile(double p) {

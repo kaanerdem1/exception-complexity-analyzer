@@ -1,13 +1,15 @@
 package com.scanner.complexity;
 
 /**
- * Risk bands on the 0–100 score scale (see {@link RiskCalculator#SCORE_MAX}).
+ * Four labels on the 0–100 complexity score (high = bad).
+ * Cuts follow the PDF band edges: çok iyi 0–24, zayıf 75–89, kritik 90–100.
+ * İyi (25–49) and orta (50–74) share MEDIUM. The five names are {@code complexityBand}.
  */
 public enum RiskLevel {
-    LOW(0.0, 30.0),
-    MEDIUM(30.0, 50.0),
-    HIGH(50.0, 80.0),
-    CRITICAL(80.0, 100.0);
+    LOW(0.0, 25.0),
+    MEDIUM(25.0, 75.0),
+    HIGH(75.0, 90.0),
+    CRITICAL(90.0, 100.0);
 
     private final double lowerBound;
     private final double upperBound;

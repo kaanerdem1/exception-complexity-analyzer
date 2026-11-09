@@ -1,36 +1,35 @@
 <?xml version="1.0"?>
-<ruleset name="Enterprise complexity and design (parser-aligned signals)"
+<ruleset name="Health complexity and quality"
          xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
 
     <description>
-        Aşama 1 (PMD) ihlalleri — parser risk boyutlarına yakın kurallar.
-        Ihlaller risk skoruna PmdViolationMethodEnricher ile yansir (JavaParser yok).
-        Yoğun demo: pmd-ruleset-complexity-mock.xml
+        PMD ihlal listesi. Skor health-score-catalog.yaml motorunda,
+        karmaşıklık ve kalite ayrı hesaplanır.
+        NPath her metotta JavaMetrics ile ölçülür ve karmaşıklık skoruna girer.
+        NPathComplexity kuralı ruleset'te yoktur: ağır metotta taramayı kilitler.
+        Ağır metotta sayım yapılmaz, tavan değer skorlanır (çıktıda npathCapped).
+        Hashtable/Vector/Date ve EJB kuralları katalogda yok.
     </description>
 
-    <!-- Karmaşıklık (parser CC / cognitive / NPath / NCSS hizası) -->
     <rule ref="category/java/design.xml/CyclomaticComplexity">
         <properties>
             <property name="classReportLevel" value="80"/>
-            <property name="methodReportLevel" value="10"/>
+            <property name="methodReportLevel" value="17"/>
         </properties>
     </rule>
     <rule ref="category/java/design.xml/CognitiveComplexity">
         <properties>
-            <property name="reportLevel" value="15"/>
+            <property name="reportLevel" value="21"/>
         </properties>
     </rule>
-    <!-- NPathComplexity kuralı NPATH sayar; dallanmalı metotta ADIM 3 kilitlenebilir. Skora girmiyor. -->
     <rule ref="category/java/design.xml/NcssCount">
         <properties>
-            <property name="methodReportLevel" value="50"/>
+            <property name="methodReportLevel" value="36"/>
             <property name="classReportLevel" value="1500"/>
         </properties>
     </rule>
-
-    <!-- Boyut / yapı (LOC, parametre, sınıf WMC) -->
     <rule ref="category/java/design.xml/ExcessiveParameterList">
         <properties>
             <property name="minimum" value="7"/>
@@ -41,11 +40,9 @@
             <property name="problemDepth" value="4"/>
         </properties>
     </rule>
-    <rule ref="category/java/design.xml/SwitchDensity"/>
-    <rule ref="category/java/design.xml/ExcessiveImports"/>
-    <rule ref="category/java/design.xml/ExcessivePublicCount"/>
-    <rule ref="category/java/design.xml/LoosePackageCoupling"/>
     <rule ref="category/java/design.xml/GodClass"/>
+    <rule ref="category/java/design.xml/ExcessivePublicCount"/>
+    <rule ref="category/java/design.xml/ExcessiveImports"/>
     <rule ref="category/java/design.xml/TooManyMethods">
         <properties>
             <property name="maxmethods" value="20"/>
@@ -61,56 +58,104 @@
             <property name="threshold" value="20"/>
         </properties>
     </rule>
-
-    <!-- Çağrı zinciri / API (FOUT / coupling proxy) -->
+    <rule ref="category/java/design.xml/SwitchDensity"/>
     <rule ref="category/java/design.xml/LawOfDemeter"/>
+    <rule ref="category/java/design.xml/LoosePackageCoupling"/>
+    <rule ref="category/java/design.xml/DataClass"/>
+    <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+    <rule ref="category/java/design.xml/SingularField"/>
+    <rule ref="category/java/bestpractices.xml/ForLoopVariableCount"/>
+    <rule ref="category/java/design.xml/SimplifyBooleanExpressions"/>
+    <rule ref="category/java/design.xml/SimplifyBooleanReturns"/>
+    <rule ref="category/java/design.xml/SimplifyConditional"/>
+    <rule ref="category/java/design.xml/SimplifiedTernary"/>
+    <rule ref="category/java/design.xml/LogicInversion"/>
 
-    <!-- Exception / catch kokuları -->
+    <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
+    <rule ref="category/java/errorprone.xml/OverrideBothEqualsAndHashcode"/>
+    <rule ref="category/java/errorprone.xml/ConstructorCallsOverridableMethod"/>
+    <rule ref="category/java/errorprone.xml/NullAssignment"/>
+    <rule ref="category/java/errorprone.xml/CloseResource"/>
     <rule ref="category/java/errorprone.xml/EmptyCatchBlock"/>
     <rule ref="category/java/errorprone.xml/AvoidCatchingGenericException"/>
     <rule ref="category/java/errorprone.xml/AvoidCatchingThrowable"/>
-    <rule ref="category/java/design.xml/AvoidThrowingRawExceptionTypes"/>
-
-    <!-- Swallow / debug -->
-    <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace"/>
-
-    <!-- Tip / koleksiyon (raw type, loose coupling) -->
-    <rule ref="category/java/bestpractices.xml/LooseCoupling"/>
-
-    <!-- Koşul karmaşıklığı (complex conditional proxy) -->
-    <rule ref="category/java/design.xml/SimplifyConditional"/>
-    <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
-    <rule ref="category/java/codestyle.xml/ConfusingTernary"/>
-    <rule ref="category/java/codestyle.xml/IdenticalCatchBranches"/>
-    <rule ref="category/java/bestpractices.xml/ExhaustiveSwitchHasDefault"/>
-    <rule ref="category/java/bestpractices.xml/PrimitiveWrapperInstantiation"/>
+    <rule ref="category/java/errorprone.xml/DoNotThrowExceptionInFinally"/>
+    <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock"/>
+    <rule ref="category/java/security.xml/HardCodedCryptoKey"/>
+    <rule ref="category/java/security.xml/InsecureCryptoIv"/>
     <rule ref="category/java/bestpractices.xml/AvoidUsingHardCodedIP"/>
-    <rule ref="category/java/bestpractices.xml/AvoidReassigningCatchVariables"/>
-
-    <!-- Sabit / literal (hardcoded proxy) -->
+    <rule ref="category/java/multithreading.xml/DoubleCheckedLocking"/>
+    <rule ref="category/java/multithreading.xml/NonThreadSafeSingleton"/>
+    <rule ref="category/java/multithreading.xml/UseConcurrentHashMap"/>
+    <rule ref="category/java/bestpractices.xml/CheckResultSet"/>
+    <rule ref="category/java/bestpractices.xml/ExhaustiveSwitchHasDefault"/>
     <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals">
         <properties>
             <property name="maxDuplicateLiterals" value="4"/>
         </properties>
     </rule>
-
-    <!-- String performans (concat-in-loop proxy) -->
+    <rule ref="category/java/errorprone.xml/BrokenNullCheck"/>
+    <rule ref="category/java/errorprone.xml/MisplacedNullCheck"/>
+    <rule ref="category/java/errorprone.xml/SuspiciousEqualsMethodName"/>
+    <rule ref="category/java/errorprone.xml/SuspiciousHashcodeMethodName"/>
+    <rule ref="category/java/errorprone.xml/UseEqualsToCompareStrings"/>
+    <rule ref="category/java/design.xml/AvoidThrowingRawExceptionTypes"/>
+    <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace"/>
+    <rule ref="category/java/bestpractices.xml/UseTryWithResources"/>
+    <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>
+    <rule ref="category/java/multithreading.xml/DontCallThreadRun"/>
+    <rule ref="category/java/multithreading.xml/OverridingThreadRun"/>
+    <rule ref="category/java/multithreading.xml/UseNotifyAllInsteadOfNotify"/>
+    <rule ref="category/java/performance.xml/AvoidInstantiatingObjectsInLoops"/>
     <rule ref="category/java/performance.xml/InefficientStringBuffering"/>
-    <rule ref="category/java/performance.xml/ConsecutiveAppendsShouldReuse"/>
-
-    <!-- Ek errorprone / bestpractices (parser kokularina yakin) -->
-    <rule ref="category/java/errorprone.xml/AvoidLiteralsInIfCondition"/>
+    <rule ref="category/java/performance.xml/UseStringBufferForStringAppends"/>
+    <rule ref="category/java/bestpractices.xml/GuardLogStatement"/>
+    <rule ref="category/java/codestyle.xml/UseExplicitTypes"/>
+    <rule ref="category/java/multithreading.xml/AvoidSynchronizedAtMethodLevel"/>
+    <rule ref="category/java/multithreading.xml/AvoidSynchronizedStatement"/>
+    <rule ref="category/java/codestyle.xml/IdenticalCatchBranches"/>
+    <rule ref="category/java/bestpractices.xml/AvoidReassigningCatchVariables"/>
     <rule ref="category/java/errorprone.xml/AvoidInstanceofChecksInCatchClause"/>
-    <rule ref="category/java/errorprone.xml/AvoidLosingExceptionInformation"/>
     <rule ref="category/java/design.xml/ExceptionAsFlowControl"/>
     <rule ref="category/java/design.xml/AvoidRethrowingException"/>
-    <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>
-    <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
     <rule ref="category/java/errorprone.xml/EmptyFinalizer"/>
-    <rule ref="category/java/design.xml/DataClass"/>
-    <rule ref="category/java/design.xml/SingularField"/>
+    <rule ref="category/java/bestpractices.xml/SystemPrintln"/>
+    <rule ref="category/java/errorprone.xml/AvoidLiteralsInIfCondition"/>
+    <rule ref="category/java/bestpractices.xml/UnusedPrivateField"/>
     <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
     <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>
-    <rule ref="category/java/errorprone.xml/NullAssignment"/>
-    <rule ref="category/java/performance.xml/AvoidInstantiatingObjectsInLoops"/>
+    <rule ref="category/java/bestpractices.xml/LooseCoupling"/>
+    <rule ref="category/java/codestyle.xml/ConfusingTernary"/>
+    <rule ref="category/java/codestyle.xml/ControlStatementBraces"/>
+    <rule ref="category/java/codestyle.xml/ClassNamingConventions"/>
+    <rule ref="category/java/codestyle.xml/MethodNamingConventions"/>
+    <rule ref="category/java/codestyle.xml/FieldNamingConventions"/>
+    <rule ref="category/java/bestpractices.xml/ForLoopCanBeForeach"/>
+    <rule ref="category/java/bestpractices.xml/LiteralsFirstInComparisons"/>
+    <rule ref="category/java/documentation.xml/CommentRequired"/>
+    <rule ref="category/java/documentation.xml/UncommentedEmptyMethodBody"/>
+    <rule ref="category/java/documentation.xml/UncommentedEmptyConstructor"/>
+    <rule ref="category/java/codestyle.xml/UseDiamondOperator"/>
+    <rule ref="category/java/codestyle.xml/LambdaCanBeMethodReference"/>
+    <rule ref="category/java/codestyle.xml/UseUnderscoresInNumericLiterals"/>
+    <rule ref="category/java/performance.xml/ConsecutiveAppendsShouldReuse"/>
+    <rule ref="category/java/performance.xml/AvoidArrayLoops"/>
+    <rule ref="category/java/performance.xml/ConsecutiveLiteralAppends"/>
+    <rule ref="category/java/bestpractices.xml/PrimitiveWrapperInstantiation"/>
+    <rule ref="category/java/errorprone.xml/InvalidLogMessageFormat"/>
+    <rule ref="category/java/errorprone.xml/MoreThanOneLogger"/>
+    <rule ref="category/java/errorprone.xml/ProperLogger"/>
+    <rule ref="category/java/errorprone.xml/UnnecessaryCaseChange"/>
+    <rule ref="category/java/errorprone.xml/UnnecessaryConversionTemporary"/>
+    <rule ref="category/java/multithreading.xml/AvoidUsingVolatile"/>
+    <rule ref="category/java/multithreading.xml/DoNotUseThreads"/>
+    <rule ref="category/java/performance.xml/InsufficientStringBufferDeclaration"/>
+    <rule ref="category/java/performance.xml/AppendCharacterWithChar"/>
+    <rule ref="category/java/performance.xml/UselessStringValueOf"/>
+    <rule ref="category/java/bestpractices.xml/UnusedFormalParameter"/>
+    <rule ref="category/java/bestpractices.xml/OneDeclarationPerLine"/>
+    <rule ref="category/java/bestpractices.xml/UnusedLabel"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryImport"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryCast"/>
+    <rule ref="category/java/codestyle.xml/UselessParentheses"/>
 </ruleset>

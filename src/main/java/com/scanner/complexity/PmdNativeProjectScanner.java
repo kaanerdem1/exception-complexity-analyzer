@@ -31,13 +31,12 @@ import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
- * Yalnizca PMD: ruleset + PMD AST/JavaMetrics + ihlal zenginlestirme + RiskCalculator.
- * {@code run-pmd-analyze.sh} bu hattı kullanır; JavaParser bu scriptte calismaz.
+ * Yalnızca PMD: ruleset + PMD AST/JavaMetrics. Skor {@link HealthScoreEngine}.
  */
 public final class PmdNativeProjectScanner {
 
     private static final String TOOL_NAME =
-            "PMD-only scan (ruleset + JavaMetrics + PMD AST stats + violation enrich)";
+            "PMD-only scan (ruleset + JavaMetrics + PMD AST stats)";
 
     private static final String CACHE_PIPELINE = "pmd-native";
     /** Tek dosya PMD metriği bu süreyi aşarsa atlanır (NPATH kilitlenmesi). */
@@ -198,23 +197,13 @@ public final class PmdNativeProjectScanner {
         }
         PmdScanDiagnosticsLog.logAfterRiskState(stateFile, hadPreviousScan, cacheStatistics, incrementalChanges);
 
-        try {
-            if (attachHashes) {
-                PmdScanDiagnosticsLog.stepStart("6/7",
-                        "Benzerlik: eksik bodyHash için JavaParser yedek (yalnızca PMD hash vermediyse)");
-                Map<String, Path> relativeToSource = new LinkedHashMap<>();
-                for (Path source : sources) {
-                    relativeToSource.put(JavaSourceDiscovery.relativePath(base, source), source);
-                }
-                files = DuplicateHashFallback.enrichMissingHashes(files, relativeToSource, charset, languageLevel);
-                PmdScanDiagnosticsLog.stepDone("6/7", "");
-            } else {
-                PmdScanDiagnosticsLog.stepStart("6/7", "Benzerlik hash yedek");
-                System.err.println("[PMD-NATIVE]   DUPLICATE=0 — adım atlandı.");
-                PmdScanDiagnosticsLog.stepDone("6/7", "kapalı");
-            }
-        } catch (Exception e) {
-            PmdScanDiagnosticsLog.stepFail("6/7", "DuplicateHashFallback", e);
+        if (!attachHashes) {
+            PmdScanDiagnosticsLog.stepStart("6/7", "Benzerlik hash");
+            System.err.println("[PMD-NATIVE]   DUPLICATE=0 — adım atlandı.");
+            PmdScanDiagnosticsLog.stepDone("6/7", "kapalı");
+        } else {
+            PmdScanDiagnosticsLog.stepStart("6/7", "Benzerlik hash (PMD gövde hash)");
+            PmdScanDiagnosticsLog.stepDone("6/7", "PMD");
         }
 
         List<AnalysisReport.DuplicateGroup> duplicateGroups = List.of();
@@ -243,7 +232,7 @@ public final class PmdNativeProjectScanner {
                 Instant.now().toString(),
                 absoluteRoot.toString(),
                 languageLevel.name(),
-                riskCalculator.buildRiskModel(),
+                HealthScoreEngine.get().riskModel(),
                 summary,
                 hotspots,
                 files,
@@ -308,7 +297,11 @@ public final class PmdNativeProjectScanner {
         List<FileError> errorSink = Collections.synchronizedList(errors);
         AtomicInteger processed = new AtomicInteger();
         int workers = incrementalEngine != null ? 1 : Math.max(1, scanOptions.workers());
-        ExecutorService pool = Executors.newFixedThreadPool(workers);
+        ExecutorService pool = Executors.newFixedThreadPool(workers, runnable -> {
+            Thread thread = new Thread(runnable, "pmd-metrics");
+            thread.setDaemon(true);
+            return thread;
+        });
         try {
             List<Future<Void>> futures = new ArrayList<>();
             for (Path source : sources) {
@@ -336,13 +329,21 @@ public final class PmdNativeProjectScanner {
                     return null;
                 }));
             }
+            int stuckWorkers = 0;
             for (int i = 0; i < futures.size(); i++) {
                 Future<Void> future = futures.get(i);
                 Path src = sources.get(i);
                 String relative = JavaSourceDiscovery.relativePath(base, src);
+                if (stuckWorkers >= workers) {
+                    future.cancel(false);
+                    errorSink.add(new FileError(relative,
+                            "PMD metrics skipped: a previous file is stuck in NPath"));
+                    continue;
+                }
                 try {
                     future.get(METRICS_FILE_TIMEOUT_SEC, TimeUnit.SECONDS);
                 } catch (TimeoutException e) {
+                    stuckWorkers++;
                     System.err.printf(Locale.ROOT,
                             "[PMD-NATIVE]   ADIM 4/7 zaman aşımı (%ds): %s — dosya atlandı%n",
                             METRICS_FILE_TIMEOUT_SEC, relative);
@@ -361,13 +362,7 @@ public final class PmdNativeProjectScanner {
             Thread.currentThread().interrupt();
             throw new RuntimeException("PMD metrics interrupted", e);
         } finally {
-            pool.shutdown();
-            try {
-                pool.awaitTermination(5, TimeUnit.MINUTES);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                pool.shutdownNow();
-            }
+            pool.shutdownNow();
         }
         if (scanOptions.reportDetail() == ReportDetail.SUMMARY) {
             return files.stream().map(PmdNativeProjectScanner::summaryStub).collect(Collectors.toList());
@@ -461,6 +456,7 @@ public final class PmdNativeProjectScanner {
                 full.maxCyclomaticComplexity(), full.riskScore(), full.riskLevel(), full.riskFactors(), List.of(),
                 full.halstead(), full.swallowedExceptionCount(), full.genericExceptionCatchCount(),
                 full.rawTypeUsageCount(), full.stringConcatInLoopCount(), full.hardcodedLiteralCount(),
-                full.fileHash(), full.fullyReusedFromCache(), full.methodsReusedFromCache());
+                full.fileHash(), full.fullyReusedFromCache(), full.methodsReusedFromCache(),
+                full.qualityScore());
     }
 }

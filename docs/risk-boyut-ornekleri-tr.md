@@ -1,4 +1,7 @@
-# **Risk boyutu örnek skorları **  
+# **Risk boyutu örnek skorları **
+
+Bu sayfa eski karışım formülünün örnekleridir (en kötü boyut + ağırlıklı ortalama). Güncel skor `health-score-catalog.yaml`: karmaşıklık ve kalite ayrıdır, birleştirilmez.
+
 **Eşik sırası: dikkat / yüksek / kritik.**
 
 Alt skor bantları (yaklaşık):

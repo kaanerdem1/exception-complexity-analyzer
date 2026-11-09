@@ -1,7 +1,5 @@
 package com.scanner.complexity;
 
-import com.github.javaparser.ParserConfiguration;
-import com.github.javaparser.ast.CompilationUnit;
 import com.scanner.complexity.AnalysisReport.ClassMetric;
 import com.scanner.complexity.AnalysisReport.FileMetric;
 
@@ -13,7 +11,7 @@ import java.util.Map;
 
 /**
  * İki aşamalı lazy parsing: dosya hash (Stage 1) + metod gövdesi hash (Stage 2).
- * {@link FileMetricsBuilder} enterprise metrikleri korur; cache yalnızca parse maliyetini düşürür.
+ * PMD taramasında dosya hash'i değişmediyse önceki metrik yeniden kullanılır.
  */
 final class IncrementalAnalysisEngine {
 
@@ -62,14 +60,6 @@ final class IncrementalAnalysisEngine {
         AnalyzerState.FileState previous = previousState.files.get(relativePath);
         return previous != null && previous.semanticFileHash != null
                 && semanticFileHash.equals(previous.semanticFileHash);
-    }
-
-    FileMetric buildFileMetric(String relativePath, String sourceText,
-                               ParserConfiguration.LanguageLevel languageLevel, CompilationUnit cu, String fileHash,
-                               RiskCalculator riskCalculator, Map<String, MethodMetric> previousMethods,
-                               ScanAccumulator summaryAccumulator, boolean pmdMetricAlignment) {
-        return FileMetricsBuilder.build(relativePath, sourceText, languageLevel, cu, riskCalculator, previousMethods,
-                summaryAccumulator, fileHash, false, pmdMetricAlignment);
     }
 
     Map<String, MethodMetric> previousMethodsByKey(String relativePath) {

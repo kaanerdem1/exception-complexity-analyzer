@@ -4,6 +4,7 @@ import com.google.gson.stream.JsonWriter;
 
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -39,6 +40,7 @@ public final class AnalysisReportJsonWriter {
         writeRiskModel(w, report.riskModel());
         writeJsonLegend(w, report, methodRiskMinScore);
         writeSummary(w, report.summary());
+        writeHealthDrill(w, report);
         writeScanDiagnostics(w, report.scanDiagnostics());
         writeCacheStatistics(w, report.cacheStatistics());
         writeIncrementalChanges(w, report.incrementalChanges());
@@ -77,6 +79,51 @@ public final class AnalysisReportJsonWriter {
         w.endObject();
     }
 
+    private static void writeHealthDrill(JsonWriter w, AnalysisReport report) throws IOException {
+        w.name("healthDrillDown");
+        w.beginArray();
+        String root = report.analyzedPath();
+        java.util.function.Function<String, String> moduleOf = root == null || root.isBlank()
+                ? null
+                : ModuleRootIndex.forScanRoot(Path.of(root))::moduleRoot;
+        for (Map<String, Object> module : HealthScoreEngine.get().drill(report.files(), moduleOf)) {
+            w.beginObject();
+            w.name("module").value(String.valueOf(module.get("module")));
+            w.name("worstClasses");
+            w.beginArray();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> classes = (List<Map<String, Object>>) module.get("worstClasses");
+            if (classes != null) {
+                for (Map<String, Object> type : classes) {
+                    w.beginObject();
+                    w.name("file").value(String.valueOf(type.get("file")));
+                    w.name("name").value(String.valueOf(type.get("name")));
+                    w.name("complexityScore").value(((Number) type.get("complexityScore")).doubleValue());
+                    w.name("qualityScore").value(((Number) type.get("qualityScore")).doubleValue());
+                    w.name("worstMethods");
+                    w.beginArray();
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> methods = (List<Map<String, Object>>) type.get("worstMethods");
+                    if (methods != null) {
+                        for (Map<String, Object> method : methods) {
+                            w.beginObject();
+                            w.name("signature").value(String.valueOf(method.get("signature")));
+                            w.name("startLine").value(((Number) method.get("startLine")).intValue());
+                            w.name("complexityScore").value(((Number) method.get("complexityScore")).doubleValue());
+                            w.name("qualityScore").value(((Number) method.get("qualityScore")).doubleValue());
+                            w.endObject();
+                        }
+                    }
+                    w.endArray();
+                    w.endObject();
+                }
+            }
+            w.endArray();
+            w.endObject();
+        }
+        w.endArray();
+    }
+
     private static void writeSummary(JsonWriter w, AnalysisReport.Summary s) throws IOException {
         w.name("summary");
         w.beginObject();
@@ -91,6 +138,10 @@ public final class AnalysisReportJsonWriter {
         w.name("godMethodCount").value(s.godMethodCount());
         w.name("projectRiskScore").value(s.projectRiskScore());
         w.name("projectRiskLevel").value(s.projectRiskLevel().name());
+        w.name("projectComplexityScore").value(s.projectRiskScore());
+        w.name("projectComplexityBand").value(HealthScoreEngine.complexityBand(s.projectRiskScore()));
+        w.name("projectQualityScore").value(s.projectQualityScore());
+        w.name("projectQualityBand").value(HealthScoreEngine.qualityBand(s.projectQualityScore()));
         w.name("highPlusCriticalLocRatio").value(s.highPlusCriticalLocRatio());
         w.name("criticalMethodsPerKloc").value(s.criticalMethodsPerKloc());
         w.name("methodRiskScoreP95").value(s.methodRiskScoreP95());
@@ -109,6 +160,7 @@ public final class AnalysisReportJsonWriter {
             w.name("methodCount").value(module.methodCount());
             w.name("codeLines").value(module.codeLines());
             w.name("locWeightedRiskScore").value(module.locWeightedRiskScore());
+            w.name("locWeightedQualityScore").value(module.locWeightedQualityScore());
             w.name("methodRiskScoreP95").value(module.methodRiskScoreP95());
             w.name("criticalMethodsPerKloc").value(module.criticalMethodsPerKloc());
             w.endObject();
@@ -192,6 +244,10 @@ public final class AnalysisReportJsonWriter {
             w.name("totalCyclomaticComplexity").value(file.totalCyclomaticComplexity());
             w.name("maxCyclomaticComplexity").value(file.maxCyclomaticComplexity());
             w.name("riskScore").value(file.riskScore());
+            w.name("complexityScore").value(file.riskScore());
+            w.name("complexityBand").value(HealthScoreEngine.complexityBand(file.riskScore()));
+            w.name("qualityScore").value(file.qualityScore());
+            w.name("qualityBand").value(HealthScoreEngine.qualityBand(file.qualityScore()));
             w.name("riskLevel").value(file.riskLevel().name());
             writeStringList(w, "riskFactors", file.riskFactors());
             w.name("classes");
@@ -213,9 +269,12 @@ public final class AnalysisReportJsonWriter {
                 w.name("maxMethodComplexity").value(type.maxMethodComplexity());
                 w.name("averageMethodComplexity").value(type.averageMethodComplexity());
                 w.name("riskScore").value(type.riskScore());
+                w.name("complexityScore").value(type.riskScore());
+                w.name("complexityBand").value(HealthScoreEngine.complexityBand(type.riskScore()));
+                w.name("qualityScore").value(type.qualityScore());
+                w.name("qualityBand").value(HealthScoreEngine.qualityBand(type.qualityScore()));
                 w.name("riskLevel").value(type.riskLevel().name());
                 writeStringList(w, "riskFactors", type.riskFactors());
-                writeHalstead(w, "halstead", type.halstead());
                 w.name("lcom3").value(type.lcom3());
                 w.name("godClassCandidate").value(type.godClassCandidate());
                 writeStringList(w, "dependentTypes", type.dependentTypes());
@@ -254,6 +313,8 @@ public final class AnalysisReportJsonWriter {
         w.name("logicalStatements").value(m.logicalStatements());
         w.name("cognitiveComplexity").value(m.cognitiveComplexity());
         w.name("npathComplexity").value(m.npathComplexity());
+        w.name("npathIncludedInComplexityScore").value(true);
+        w.name("npathCapped").value(m.npathComplexity() >= PmdMetricsAligner.NPATH_CAP);
         w.name("ncssCount").value(m.ncssCount());
         w.name("exitPoints").value(m.exitPoints());
         w.name("catchClauses").value(m.catchClauses());
@@ -272,6 +333,11 @@ public final class AnalysisReportJsonWriter {
         w.name("parameterCount").value(m.parameterCount());
         w.name("godMethod").value(m.godMethod());
         w.name("riskScore").value(m.riskScore());
+        w.name("complexityScore").value(m.riskScore());
+        w.name("complexityBand").value(HealthScoreEngine.complexityBand(m.riskScore()));
+        w.name("qualityScore").value(m.qualityScore());
+        w.name("qualityBand").value(HealthScoreEngine.qualityBand(m.qualityScore()));
+        w.name("excludedFromHealthScore").value(m.excludedFromHealthScore());
         w.name("riskLevel").value(m.riskLevel().name());
         w.name("metricsImputed").value(m.metricsImputed());
         writeStringList(w, "riskFactors", m.riskFactors());
@@ -280,7 +346,6 @@ public final class AnalysisReportJsonWriter {
             writeRiskScoreExplain(w, m, m.riskBreakdown(), riskModel);
         }
         writeRiskInputs(w, m, analyzedPath, profileVersion, pipeline);
-        writeHalstead(w, "halstead", m.halstead());
         writeExceptionSmells(w, m.exceptionSmells());
         writeCodeSmells(w, m.codeSmells());
         w.name("methodHash").value(m.methodHash());
@@ -303,7 +368,13 @@ public final class AnalysisReportJsonWriter {
         w.name("riskScoreDimensions").value(
                 "Per method: rawValue = counted metric; subScore = 0-100; threshold* = profile dikkat/yuksek/kritik.");
         w.name("riskScoreComposition").value(
-                "finalScore ≈ dominantWeight×max(subScore)+blendWeight×weightedBlend; see riskModel.formula.");
+                "PMD: complexityScore high=bad (100-raw), qualityScore high=good. They are not merged. "
+                        + "riskScore is the complexity score. projectQualityScore is the LOC-weighted class quality. "
+                        + "See riskModel.formula.");
+        w.name("npath").value(
+                "npathComplexity is measured for every method and included in complexityScore. "
+                        + "The PMD NPathComplexity rule is not in the ruleset (it can lock the scan). "
+                        + "npathCapped=true means the heavy-method cap was scored instead of an unbounded count.");
         w.name("methodHash").value(
                 "Incremental cache key (analyzer-state.json or pmd-analyzer-state.json). Independent of scan_run_id / DB.");
         w.name("metricsImputed").value(
@@ -417,8 +488,6 @@ public final class AnalysisReportJsonWriter {
             case "catchWithOnlyPrintStackTrace" -> scan.catchWithOnlyPrintStackTrace();
             case "primitiveObsessionIndex" -> scan.primitiveObsessionIndex();
             case "maxBooleanOperatorsInCondition" -> scan.maxBooleanOperatorsInCondition();
-            case "halsteadDifficulty" -> scan.halsteadDifficultyRounded();
-            case "halsteadEffort" -> scan.halsteadEffortRounded();
             case "rawTypeUsage" -> scan.rawTypeUsage();
             case "stringConcatInLoop" -> scan.stringConcatInLoop();
             case "hardcodedLiteralCount" -> scan.hardcodedLiteralCount();
@@ -523,6 +592,10 @@ public final class AnalysisReportJsonWriter {
         w.name("profile").value(profileVersion == null ? "" : profileVersion);
         w.name("analyzedPath").value(analyzedPath == null ? "" : analyzedPath);
         w.name("pipeline").value(pipeline);
+        w.name("complexityScore").value(RiskCalculator.round3(m.riskScore()));
+        w.name("qualityScore").value(RiskCalculator.round3(m.qualityScore()));
+        w.name("npathIncludedInComplexityScore").value(!m.excludedFromHealthScore());
+        w.name("npathCapped").value(m.npathComplexity() >= PmdMetricsAligner.NPATH_CAP);
         w.name("metrics");
         w.beginObject();
         w.name("physicalLines").value(m.physicalLines());
@@ -634,15 +707,6 @@ public final class AnalysisReportJsonWriter {
             w.endObject();
         }
         w.endArray();
-        w.endObject();
-    }
-
-    private static void writeHalstead(JsonWriter w, String name, HalsteadMetrics h) throws IOException {
-        w.name(name);
-        w.beginObject();
-        w.name("difficulty").value(h.difficulty());
-        w.name("effort").value(h.effort());
-        w.name("volume").value(h.volume());
         w.endObject();
     }
 

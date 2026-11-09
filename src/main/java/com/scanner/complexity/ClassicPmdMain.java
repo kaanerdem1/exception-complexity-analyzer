@@ -162,7 +162,7 @@ public final class ClassicPmdMain {
             }
             ScanOptions scanOptions = ScanOptions.fromCli(includes, excludes, workers, 500,
                     ScanOptions.ReportDetail.FULL, !noDefaultIgnores, null, false, false, 50, false, 0,
-                    false, false);
+                    false);
             return new Options(path, output, markdown, ruleset, charset, languageLevel, scanOptions, help);
         }
 

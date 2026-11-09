@@ -499,8 +499,8 @@ public final class ScannerApp {
                 + "): " + results.size() + " repo");
         ComplexityRunner runner = new ComplexityRunner(cfg.complexity);
         StringBuilder md = new StringBuilder("# Kod karmaşıklığı özeti\n\n"
-                + "| Proje | Repo | Yol | Dosya | Metot | Kod satırı | Proje riski | Seviye | YÜKSEK | KRİTİK | p95 | Rapor |\n"
-                + "|---|---|---|--:|--:|--:|--:|---|--:|--:|--:|---|\n");
+                + "| Proje | Repo | Yol | Dosya | Metot | Kod satırı | Karmaşıklık | Seviye | Kalite | YÜKSEK | KRİTİK | p95 | Rapor |\n"
+                + "|---|---|---|--:|--:|--:|--:|---|--:|--:|--:|--:|---|\n");
         int done = 0, written = 0;
         for (RepoResult r : results) {
             done++;
@@ -520,9 +520,11 @@ public final class ScannerApp {
                     AnalysisReport.Summary s = res.summary();
                     long high = s.methodRiskDistribution().getOrDefault(RiskLevel.HIGH, 0L);
                     long critical = s.methodRiskDistribution().getOrDefault(RiskLevel.CRITICAL, 0L);
-                    log(String.format("[%d/%d] %s (%s): %d dosya, %d metot, proje riski %.1f (%s), %d yüksek / %d kritik metot (%s)",
+                    log(String.format("[%d/%d] %s (%s): %d dosya, %d metot, karmaşıklık %.1f (%s), kalite %.1f (%s), %d yüksek / %d kritik metot (%s)",
                             done, results.size(), repo.id(), res.engine(), s.filesParsed(), s.methodCount(), s.projectRiskScore(),
-                            s.projectRiskLevel(), high, critical, seconds(System.currentTimeMillis() - started)));
+                            s.projectRiskLevel(), s.projectQualityScore(),
+                            com.scanner.complexity.HealthScoreEngine.qualityBand(s.projectQualityScore()),
+                            high, critical, seconds(System.currentTimeMillis() - started)));
                     if (scanRunId != null) {
                         try (PostgresExporter pg = new PostgresExporter(cfg)) {
                             PostgresExporter.ComplexityInsert ci = pg.insertComplexity(scanRunId, repo, res.report());
@@ -547,9 +549,9 @@ public final class ScannerApp {
                         }
                     }
                     Path report = res.markdown() != null ? res.markdown() : res.json();
-                    md.append(String.format(java.util.Locale.ROOT, "| %s | %s | %s | %d | %d | %d | %.1f | %s | %d | %d | %.1f | [%s](%s) |%n",
+                    md.append(String.format(java.util.Locale.ROOT, "| %s | %s | %s | %d | %d | %d | %.1f | %s | %.1f | %d | %d | %.1f | [%s](%s) |%n",
                             repo.projectKey, repo.slug, res.engine(), s.filesParsed(), s.methodCount(), s.totalCodeLines(),
-                            s.projectRiskScore(), s.projectRiskLevel(), high, critical, s.methodRiskScoreP95(),
+                            s.projectRiskScore(), s.projectRiskLevel(), s.projectQualityScore(), high, critical, s.methodRiskScoreP95(),
                             report.getFileName(), dir.relativize(report).toString().replace('\\', '/')));
                 }
                 written++;

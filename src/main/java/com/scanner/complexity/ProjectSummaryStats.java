@@ -19,6 +19,9 @@ final class ProjectSummaryStats {
     private final LongAdder godMethodCount = new LongAdder();
     private double weightedScoreSum;
     private long weightedLocSum;
+    private double classComplexitySum;
+    private double classQualitySum;
+    private long classLocSum;
     private int maxCyclomatic;
     private final ModuleSummaryStats moduleSummaries = new ModuleSummaryStats();
 
@@ -32,6 +35,9 @@ final class ProjectSummaryStats {
     }
 
     synchronized void addMethod(String moduleRoot, MethodMetric method) {
+        if (method.excludedFromHealthScore()) {
+            return;
+        }
         moduleSummaries.addMethod(moduleRoot, method);
         methodCount.increment();
         totalCyclomatic.add(method.cyclomaticComplexity());
@@ -55,11 +61,32 @@ final class ProjectSummaryStats {
         scoreBuckets[bucket].increment();
     }
 
+    /** PDF uygulama skoru: sınıf skorları, hariç tutulan metotların satırı ağırlığa girmez. */
+    synchronized void addClass(String moduleRoot, AnalysisReport.ClassMetric type) {
+        int loc = 0;
+        for (MethodMetric method : type.methods()) {
+            if (method.excludedFromHealthScore()) {
+                continue;
+            }
+            loc += Math.max(0, method.codeLines());
+        }
+        if (loc == 0) {
+            return;
+        }
+        classComplexitySum += type.riskScore() * loc;
+        classQualitySum += type.qualityScore() * loc;
+        classLocSum += loc;
+        moduleSummaries.addClass(moduleRoot, type.riskScore(), type.qualityScore(), loc);
+    }
+
     AnalysisReport.Summary toSummary(int filesScanned, int filesParsed, int filesFailed, int classCount,
                                        int totalFileCodeLines) {
         long methods = methodCount.sum();
         double avgCc = methods == 0 ? 0.0 : Math.round(totalCyclomatic.sum() * 100.0 / methods) / 100.0;
-        double projectScore = weightedLocSum == 0 ? 0.0 : RiskCalculator.round3(weightedScoreSum / weightedLocSum);
+        double projectScore = classLocSum == 0
+                ? (weightedLocSum == 0 ? 0.0 : RiskCalculator.round3(weightedScoreSum / weightedLocSum))
+                : RiskCalculator.round3(classComplexitySum / classLocSum);
+        double projectQuality = classLocSum == 0 ? 0.0 : RiskCalculator.round3(classQualitySum / classLocSum);
         long methodLoc = totalMethodLoc.sum();
         double highLocRatio = methodLoc == 0 ? 0.0
                 : RiskCalculator.round3(highPlusCriticalLoc.sum() / (double) methodLoc);
@@ -73,7 +100,7 @@ final class ProjectSummaryStats {
                 filesScanned, filesParsed, filesFailed,
                 classCount, (int) methods, totalFileCodeLines,
                 avgCc, maxCyclomatic, (int) godMethodCount.sum(),
-                projectScore, RiskLevel.fromScore(projectScore), dist,
+                projectScore, RiskLevel.fromScore(projectScore), projectQuality, dist,
                 highLocRatio, criticalPerKloc, percentile(0.95), percentile(0.99),
                 moduleSummaries.toSummaries());
     }

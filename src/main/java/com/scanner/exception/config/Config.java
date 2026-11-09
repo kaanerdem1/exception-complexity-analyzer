@@ -182,7 +182,7 @@ public final class Config {
      */
     public static final class Complexity {
         public final boolean enabled;
-        /** PARSER (JavaParser, tam metrik), PMD (sadece PMD) veya BOTH */
+        /** Yalnızca PMD. */
         public final com.scanner.complexity.ComplexityRunner.Engine engine;
         public final com.github.javaparser.ParserConfiguration.LanguageLevel languageLevel;
         public final Charset charset;
@@ -197,7 +197,7 @@ public final class Config {
         public final int workers;
         /** JSON'un yanında okunabilir Markdown raporu da yazılsın mı */
         public final boolean markdown;
-        /** Boş: yolun varsayılanı (parser: enterprise-java, pmd: enterprise-java-pmd) */
+        /** Boş: health-score-catalog. Eski parser profili yok. */
         public final String riskProfile;
         /** Repo başına analyzer-state.json (rapor klasöründe *-parser-analyzer-state.json / *-pmd-analyzer-state.json) */
         public final boolean incrementalCache;
@@ -213,11 +213,11 @@ public final class Config {
         Complexity(Properties p) {
             enabled = Boolean.parseBoolean(get(p, "complexity.enabled", "false"));
             String eng = get(p, "complexity.engine", "pmd").trim().toUpperCase(Locale.ROOT);
-            try {
-                engine = com.scanner.complexity.ComplexityRunner.Engine.valueOf(eng);
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("complexity.engine parser, pmd veya both olmalı: " + eng);
+            if (!eng.equals("PMD")) {
+                throw new IllegalArgumentException(
+                        "complexity.engine yalnızca pmd. Parser hattı kaldırıldı: " + eng);
             }
+            engine = com.scanner.complexity.ComplexityRunner.Engine.PMD;
             String level = get(p, "complexity.language.level", "JAVA_17").trim().toUpperCase(Locale.ROOT);
             languageLevel = com.github.javaparser.ParserConfiguration.LanguageLevel.valueOf(
                     level.startsWith("JAVA_") ? level : "JAVA_" + level);
@@ -276,7 +276,7 @@ public final class Config {
         public final String swallowedTable;
         /** Bu orandan düşük benzerlik grupları method_similarity'ye yazılmaz (tablonun alt sınır kısıtıyla aynı tutulur) */
         public final int similarityMinPercent;
-        /** Bu skorun altındaki metotlar method_risk_analyze'e yazılmaz (DÜŞÜK bandı: &lt; 30) */
+        /** Bu skorun altındaki metotlar method_risk_analyze'e yazılmaz */
         public final double methodRiskMinScore;
         /** Taramada taranan her repo için bir satır (rapor API'si buradan okur) */
         public final String repoTable;

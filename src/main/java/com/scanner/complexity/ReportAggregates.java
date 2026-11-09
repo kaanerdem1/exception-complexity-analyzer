@@ -26,6 +26,7 @@ final class ReportAggregates {
             classCount += file.classCount();
             String moduleRoot = moduleRoots.moduleRoot(file.path());
             for (ClassMetric type : file.classes()) {
+                stats.addClass(moduleRoot, type);
                 for (MethodMetric method : type.methods()) {
                     stats.addMethod(moduleRoot, method);
                 }
@@ -39,7 +40,7 @@ final class ReportAggregates {
         for (FileMetric file : files) {
             for (ClassMetric type : file.classes()) {
                 for (MethodMetric m : type.methods()) {
-                    if (MethodAccessorFilter.isSimpleGetterOrSetter(m)) {
+                    if (m.excludedFromHealthScore() || MethodAccessorFilter.isSimpleGetterOrSetter(m)) {
                         continue;
                     }
                     hotspots.add(new RiskHotspot(file.path(), file.packageName(), type.name(), m.signature(),

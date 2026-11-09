@@ -16,7 +16,7 @@ import java.util.function.ToIntFunction;
 public final class RiskProfileLoader {
 
     /** Varsayılan CLI / {@link RiskCalculator} profili (YAML {@code enterprise-java}). */
-    public static final String DEFAULT_PROFILE_ID = "enterprise-java";
+    public static final String DEFAULT_PROFILE_ID = "enterprise-java-pmd";
 
     private static final String DEFAULT_RESOURCE = "/config/risk-parameters-proposal.yaml";
     private static final double DEFAULT_COMPOUND = 0.15;

@@ -43,7 +43,7 @@ final class JavaSourceDiscovery {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                 if (!dir.equals(root)) {
-                    if (ProjectAnalyzer.shouldSkipAsBuildOutputDirectory(root, dir,
+                    if (shouldSkipAsBuildOutputDirectory(root, dir,
                             scan.applyDefaultIgnoredDirectories())) {
                         skippedIgnoredDirs[0]++;
                         return FileVisitResult.SKIP_SUBTREE;
@@ -82,5 +82,40 @@ final class JavaSourceDiscovery {
     static String relativePath(Path base, Path file) {
         Path relative = base != null && file.startsWith(base) ? base.relativize(file) : file;
         return relative.toString().replace('\\', '/');
+    }
+
+    /** target/build/dist atlanır; src/main/java/.../build/util gibi paket parçaları kalır. */
+    static boolean shouldSkipAsBuildOutputDirectory(Path scanRoot, Path dir, boolean applyDefaultIgnores) {
+        if (!applyDefaultIgnores) {
+            return false;
+        }
+        Path name = dir.getFileName();
+        if (name == null || !IGNORED_DIRECTORIES.contains(name.toString())) {
+            return false;
+        }
+        String relative = scanRoot.relativize(dir).toString().replace('\\', '/');
+        if (isUnderJavaSourceTree(relative)) {
+            return false;
+        }
+        Path parent = dir.getParent();
+        return parent != null && isModuleBoundaryDirectory(scanRoot, parent);
+    }
+
+    private static boolean isModuleBoundaryDirectory(Path scanRoot, Path directory) {
+        if (directory.equals(scanRoot)) {
+            return true;
+        }
+        return Files.isRegularFile(directory.resolve("pom.xml"))
+                || Files.isRegularFile(directory.resolve("build.gradle"))
+                || Files.isRegularFile(directory.resolve("build.gradle.kts"))
+                || Files.isDirectory(directory.resolve("src/main/java"))
+                || Files.isDirectory(directory.resolve("src"));
+    }
+
+    private static boolean isUnderJavaSourceTree(String relativeUnixPath) {
+        return relativeUnixPath.contains("/src/main/java/")
+                || relativeUnixPath.contains("/src/test/java/")
+                || relativeUnixPath.startsWith("src/main/java/")
+                || relativeUnixPath.startsWith("src/test/java/");
     }
 }

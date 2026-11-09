@@ -16,16 +16,15 @@ final class AnalysisConsoleLogger {
     private AnalysisConsoleLogger() {
     }
 
-    static void logRunHeader(PathLabel path, boolean verbose, RiskCalculator riskCalculator) {
+    static void logRunHeader(PathLabel path, boolean verbose) {
         PrintStream err = System.err;
-        AnalysisReport.RiskModel model = riskCalculator.buildRiskModel();
+        AnalysisReport.RiskModel model = HealthScoreEngine.get().riskModel();
         err.println(TAG + " ========================================");
-        err.println(TAG + " Standalone Java complexity & risk scan");
+        err.println(TAG + " Standalone Java complexity & quality scan");
         err.println(TAG + " Target: " + path.value());
-        err.println(TAG + " Risk model: " + model.version() + " (0.0–1.0 composite score)");
+        err.println(TAG + " Score model: " + model.version() + " (0–100; complexity high=bad, quality high=good)");
         err.println(TAG + " " + model.formula());
-        err.println(TAG + " " + RiskCalculator.consoleModelLine(riskCalculator));
-        err.println(TAG + " Thresholds (dikkat/yüksek/kritik): " + formatThresholds(model));
+        err.println(TAG + " Metric ceilings: " + formatThresholds(model));
         err.println(TAG + " Verbose method listing: " + (verbose ? "ON" : "OFF (use --verbose)"));
         err.println(TAG + " JSON schema: riskBreakdown per method when score is computed");
         err.println(TAG + " ========================================");
@@ -41,8 +40,11 @@ final class AnalysisConsoleLogger {
                 + " totalCodeLines=" + s.totalCodeLines());
         err.println(TAG + " CC: avg=" + s.averageCyclomaticComplexity() + " max=" + s.maxCyclomaticComplexity());
         err.println(TAG + " God methods=" + s.godMethodCount());
-        err.println(TAG + " Project risk: score=" + s.projectRiskScore() + " level=" + s.projectRiskLevel()
+        err.println(TAG + " Project complexity: score=" + s.projectRiskScore() + " level=" + s.projectRiskLevel()
+                + " band=" + HealthScoreEngine.complexityBand(s.projectRiskScore())
                 + " | tail p95=" + s.methodRiskScoreP95() + " p99=" + s.methodRiskScoreP99());
+        err.println(TAG + " Project quality: score=" + s.projectQualityScore()
+                + " band=" + HealthScoreEngine.qualityBand(s.projectQualityScore()));
         err.println(TAG + " High+critical LOC share=" + s.highPlusCriticalLocRatio()
                 + " critical/KLOC=" + s.criticalMethodsPerKloc());
         err.println(TAG + " Distribution: LOW=" + s.methodRiskDistribution().get(RiskLevel.LOW)
@@ -159,12 +161,17 @@ final class AnalysisConsoleLogger {
 
     private static String formatThresholds(AnalysisReport.RiskModel model) {
         StringBuilder sb = new StringBuilder();
-        model.thresholds().forEach((id, triple) -> {
+        model.thresholds().forEach((id, bounds) -> {
             if (sb.length() > 0) {
                 sb.append(" | ");
             }
-            sb.append(id).append(": ").append(triple.get(0)).append('/')
-                    .append(triple.get(1)).append('/').append(triple.get(2));
+            sb.append(id).append(": ");
+            for (int i = 0; i < bounds.size(); i++) {
+                if (i > 0) {
+                    sb.append('/');
+                }
+                sb.append(bounds.get(i));
+            }
         });
         return sb.toString();
     }

@@ -134,16 +134,14 @@ final class StandaloneReportMarkdown {
         out.write("- **Parametre:** Metod imzasındaki parametre adedi.\n");
         out.write("- **Primitive obsession (indeks):** İmzada primitive/String/boolean flag + gövdede string/primitive yoğunluğu.\n");
         out.write("- **Complex conditional:** Tek koşuldaki maksimum `&&` / `||` sayısı.\n\n");
-        out.write("### Risk skoru ve seviye\n\n");
-        out.write("- **Risk (0–100):** Enterprise v3’te dallanma, LOC, Halstead, kokular, lambda vb. **tüm boyutlar** ");
-        out.write("0–100 alt skora çevrilir; **en kötü boyut** ile **ağırlıklı ortalama** birleşerek **tek skor** ");
-        out.write("üretilir (profil YAML’da). Tabloda yalnızca bu nihai skor görünür; kırılım JSON `riskBreakdown`.\n");
-        out.write("- **80+:** KRİTİK bandı; 100 tavan değil, üst sınır — ayırt için ince farklar korunur.\n");
-        out.write("- **Neden (dominant):** Skoru en çok hangi **risk boyutu** şişirdi — örneğin “dallanma” veya “uzunluk”.\n");
-        out.write("- **Dev metod:** Aşırı uzun veya aşırı karmaşık metod uyarısı.\n\n");
-        out.write("Aşağıdaki tabloda **taranan her metod** risk skoruna göre sıralanır (DÜŞÜK dahil); ");
-        out.write("legacy/Halstead/koku girdileri skor sütunlarında ham sayı olarak görünür. ");
-        out.write("Halstead, kod kokuları, LCOM3, modül cache istatistikleri **JSON raporunda** (`--output=…json`).\n");
+        out.write("### Karmaşıklık, kalite ve seviye\n\n");
+        out.write("- **Karmaşıklık (0–100):** Yüksek kötü. Aktif kuralların ağırlıklı ortalaması `100 − ham` olarak yazılır.\n");
+        out.write("- **Kalite (0–100):** Yüksek iyi. Ayrı kanal; karmaşıklıkla tek skora indirilmez.\n");
+        out.write("- **Sınıf:** Satır ağırlıklı metot ortalaması ile sınıf kuralları (varsayılan yarı yarıya).\n");
+        out.write("- **Modül ve uygulama:** Sınıf skorunun satır ağırlıklı ortalaması.\n");
+        out.write("- **Dev metod:** Katalog tavanını aşan dallanma veya satır sayısı.\n\n");
+        out.write("Aşağıdaki tabloda yayın eşiğinin üstündeki metotlar karmaşıklık skoruna göre sıralanır. ");
+        out.write("Trivial get/set/is her iki skordan da çıkar.\n");
         out.write("Incremental tarama: `run-analyze` varsayılan `--state=analysis-output/analyzer-state.json`; ");
         out.write("yorum/boşluk-only değişikliklerde skor motoru **AST özeti aynıysa** atlanır.\n\n");
 
@@ -159,8 +157,10 @@ final class StandaloneReportMarkdown {
         out.write("| Ortalama / en yüksek dallanma (CC) | "
                 + fmt(s.averageCyclomaticComplexity()) + " / " + s.maxCyclomaticComplexity() + " |\n");
         out.write("| Dev metod sayısı | " + s.godMethodCount() + " |\n");
-        out.write("| **Proje risk skoru (LOC ort.)** | **" + fmt(s.projectRiskScore())
+        out.write("| **Proje karmaşıklığı (sınıf LOC ort.)** | **" + fmt(s.projectRiskScore())
                 + " (" + levelTr(s.projectRiskLevel()) + ")** |\n");
+        out.write("| **Proje kalitesi (sınıf LOC ort.)** | **" + fmt(s.projectQualityScore())
+                + " (" + HealthScoreEngine.qualityBand(s.projectQualityScore()) + ")** |\n");
         out.write("| Metod risk p95 / p99 | " + fmt(s.methodRiskScoreP95()) + " / "
                 + fmt(s.methodRiskScoreP99()) + " |\n");
         out.write("| YÜKSEK+KRİTİK metod LOC payı | " + fmt(s.highPlusCriticalLocRatio()) + " |\n");
@@ -221,11 +221,12 @@ final class StandaloneReportMarkdown {
             return;
         }
         out.write("### Modül bazında risk (p95 / KRİTİK·KLOC)\n\n");
-        out.write("| Modül | Metod | Kod satırı | LOC-ağırlıklı risk | p95 | KRİTİK/KLOC |\n");
-        out.write("|-------|------:|-----------:|-------------------:|----:|------------:|\n");
+        out.write("| Modül | Metod | Kod satırı | Karmaşıklık | Kalite | p95 | KRİTİK/KLOC |\n");
+        out.write("|-------|------:|-----------:|------------:|-------:|----:|------------:|\n");
         for (AnalysisReport.ModuleRiskSummary m : modules) {
             out.write("| `" + escapeCell(m.moduleRoot()) + "` | " + m.methodCount() + " | "
                     + m.codeLines() + " | " + fmt(m.locWeightedRiskScore()) + " | "
+                    + fmt(m.locWeightedQualityScore()) + " | "
                     + fmt(m.methodRiskScoreP95()) + " | " + fmt(m.criticalMethodsPerKloc()) + " |\n");
         }
         out.write("\n");
@@ -495,7 +496,6 @@ final class StandaloneReportMarkdown {
                 case "catchWithOnlyPrintStackTrace" -> m.catchWithOnlyPrintStackTrace = reader.nextInt();
                 case "primitiveObsessionIndex" -> m.primitiveObsessionIndex = reader.nextInt();
                 case "maxBooleanOperatorsInCondition" -> m.maxBooleanOperatorsInCondition = reader.nextInt();
-                case "halstead" -> readHalsteadIntoMethodJson(reader, m);
                 case "exceptionSmells" -> readExceptionSmellCounts(reader, m);
                 case "codeSmells" -> readCodeSmellCounts(reader, m);
                 case "godMethod" -> m.god = reader.nextBoolean();
@@ -507,20 +507,6 @@ final class StandaloneReportMarkdown {
         }
         reader.endObject();
         return m;
-    }
-
-    private static void readHalsteadIntoMethodJson(JsonReader reader, MethodJson m) throws IOException {
-        reader.beginObject();
-        while (reader.hasNext()) {
-            switch (reader.nextName()) {
-                case "difficulty" -> m.halsteadDifficulty = reader.nextDouble();
-                case "effort" -> m.halsteadEffort = reader.nextDouble();
-                default -> skipValue(reader);
-            }
-        }
-        reader.endObject();
-        m.halsteadDifficultyRounded = (int) Math.round(m.halsteadDifficulty);
-        m.halsteadEffortRounded = (int) Math.min(Integer.MAX_VALUE, Math.round(m.halsteadEffort));
     }
 
     private static void readExceptionSmellCounts(JsonReader reader, MethodJson m) throws IOException {
@@ -631,6 +617,7 @@ final class StandaloneReportMarkdown {
         int godMethods = 0;
         double projectScore = 0;
         RiskLevel projectLevel = RiskLevel.LOW;
+        double projectQuality = 0;
         double highLocRatio = 0;
         double criticalPerKloc = 0;
         double p95 = 0;
@@ -654,6 +641,8 @@ final class StandaloneReportMarkdown {
                 case "godMethodCount" -> godMethods = reader.nextInt();
                 case "projectRiskScore" -> projectScore = reader.nextDouble();
                 case "projectRiskLevel" -> projectLevel = RiskLevel.valueOf(reader.nextString());
+                case "projectQualityScore" -> projectQuality = reader.nextDouble();
+                case "projectComplexityScore", "projectComplexityBand", "projectQualityBand" -> skipValue(reader);
                 case "highPlusCriticalLocRatio" -> highLocRatio = reader.nextDouble();
                 case "criticalMethodsPerKloc" -> criticalPerKloc = reader.nextDouble();
                 case "methodRiskScoreP95" -> p95 = reader.nextDouble();
@@ -665,7 +654,7 @@ final class StandaloneReportMarkdown {
         }
         reader.endObject();
         return new AnalysisReport.Summary(filesScanned, filesParsed, filesFailed, classCount, methodCount,
-                totalCodeLines, avgCc, maxCc, godMethods, projectScore, projectLevel, dist,
+                totalCodeLines, avgCc, maxCc, godMethods, projectScore, projectLevel, projectQuality, dist,
                 highLocRatio, criticalPerKloc, p95, p99, moduleSummaries);
     }
 
@@ -678,6 +667,7 @@ final class StandaloneReportMarkdown {
             int methodCount = 0;
             int codeLines = 0;
             double locWeighted = 0;
+            double locWeightedQuality = 0;
             double p95 = 0;
             double criticalPerKloc = 0;
             reader.beginObject();
@@ -687,6 +677,7 @@ final class StandaloneReportMarkdown {
                     case "methodCount" -> methodCount = reader.nextInt();
                     case "codeLines" -> codeLines = reader.nextInt();
                     case "locWeightedRiskScore" -> locWeighted = reader.nextDouble();
+                    case "locWeightedQualityScore" -> locWeightedQuality = reader.nextDouble();
                     case "methodRiskScoreP95" -> p95 = reader.nextDouble();
                     case "criticalMethodsPerKloc" -> criticalPerKloc = reader.nextDouble();
                     default -> skipValue(reader);
@@ -694,7 +685,7 @@ final class StandaloneReportMarkdown {
             }
             reader.endObject();
             list.add(new AnalysisReport.ModuleRiskSummary(moduleRoot, methodCount, codeLines,
-                    locWeighted, p95, criticalPerKloc));
+                    locWeighted, locWeightedQuality, p95, criticalPerKloc));
         }
         reader.endArray();
         return list;
@@ -1111,12 +1102,11 @@ final class StandaloneReportMarkdown {
     }
 
     private static String describeRiskModelTr(AnalysisReport.RiskModel riskModel) {
-        String version = riskModel.version() == null ? "" : riskModel.version();
-        String suffix = version.startsWith("v3")
-                ? " — Halstead, kod kokuları, exception kokuları ve sınıf LCOM3/Ce dahil (~25 metod boyutu)."
-                : ".";
-        return "**Puanlama:** enterprise-java YAML (0–100); skor ≈ %65 en kötü boyut + %35 ağırlıklı "
-                + "ortalama + ince ayırıcı; seviye 30 / 50 / 80 eşikleri" + suffix;
+        String version = riskModel.version() == null || riskModel.version().isBlank()
+                ? "health-score-catalog" : riskModel.version();
+        String formula = riskModel.formula() == null ? "" : riskModel.formula();
+        return "**Puanlama:** " + version + " (0–100). Kalite yüksek = iyi, karmaşıklık yüksek = kötü; "
+                + "iki skor birleştirilmez. " + formula;
     }
 
     private record MethodRow(
@@ -1157,10 +1147,6 @@ final class StandaloneReportMarkdown {
         int catchWithOnlyPrintStackTrace;
         int primitiveObsessionIndex;
         int maxBooleanOperatorsInCondition;
-        double halsteadDifficulty;
-        double halsteadEffort;
-        int halsteadDifficultyRounded;
-        int halsteadEffortRounded;
         int rawTypeUsage;
         int stringConcatInLoop;
         int hardcodedLiteralCount;
@@ -1174,7 +1160,7 @@ final class StandaloneReportMarkdown {
                     catchClauses, switchCases, foutCount, lambdaCount, maxTryNestingDepth, localVariableCount,
                     maxMethodCallChainLength, emptyCatchBlocks, catchExceptionOrThrowable,
                     catchWithOnlyPrintStackTrace, primitiveObsessionIndex, maxBooleanOperatorsInCondition,
-                    halsteadDifficultyRounded, halsteadEffortRounded, rawTypeUsage, stringConcatInLoop,
+                    0, 0, rawTypeUsage, stringConcatInLoop,
                     hardcodedLiteralCount, swallowedExceptionSmells, genericExceptionSmells);
         }
 
@@ -1184,7 +1170,7 @@ final class StandaloneReportMarkdown {
         }
     }
 
-    /** Enterprise-java v3 metod tablosu sütunları (YAML blend_weights ile uyumlu). */
+    /** Metot tablosu sütunları. Skor health-score-catalog; sütunlar ham ölçüm. */
     private static final class MethodRiskTableColumns {
 
         record Column(String id, String header, String legendTr, ToIntFunction<MethodScanValues> value) {
@@ -1213,8 +1199,6 @@ final class StandaloneReportMarkdown {
                 new Column("primitiveObsessionIndex", "Prim", "Primitive obsession indeksi", MethodScanValues::primitiveObsessionIndex),
                 new Column("maxBooleanOperatorsInCondition", "&&‖", "Tek koşuldaki max && / || sayısı",
                         MethodScanValues::maxBooleanOperatorsInCondition),
-                new Column("halsteadDifficulty", "H.Dif", "Halstead zorluk (yuvarlak)", MethodScanValues::halsteadDifficultyRounded),
-                new Column("halsteadEffort", "H.Efor", "Halstead effort (yuvarlak)", MethodScanValues::halsteadEffortRounded),
                 new Column("rawTypeUsage", "Raw", "Ham (raw) tip kullanımı", MethodScanValues::rawTypeUsage),
                 new Column("stringConcatInLoop", "Concat", "Döngüde string birleştirme", MethodScanValues::stringConcatInLoop),
                 new Column("hardcodedLiteralCount", "Sabit", "Gömülü sabit (IP/SQL/URL vb.)", MethodScanValues::hardcodedLiteralCount),
@@ -1223,14 +1207,13 @@ final class StandaloneReportMarkdown {
                         MethodScanValues::genericExceptionSmells));
 
         static void writeScoreInputLegend(Writer out) throws IOException {
-            out.write("**Skor girdileri (enterprise-java v3):** Dokümantasyondaki legacy/Halstead/koku katmanının ");
-            out.write("ham sayıları — her biri YAML eşiklerine göre 0–100 alt skora çevrilip nihai **Risk** ");
-            out.write("sütununa girer (~25 metod boyutu). Sınıf düzeyi (LCOM3, Ce, god-class) JSON sınıf kaydında.\n\n");
+            out.write("**Ölçüm sütunları:** Ham sayılar. Karmaşıklık ve kalite skoru `health-score-catalog.yaml` ");
+            out.write("kurallarından gelir. Bu sütunların hepsi skora girmez.\n\n");
             for (Column c : ENTERPRISE_V3) {
                 out.write("- **" + c.header() + "** (`" + c.id() + "`): " + c.legendTr() + "\n");
             }
-            out.write("- **FOUT†** (`outboundDistinctCalls`): Dış çağrı çeşitliliği — **katalog**; v3 metod skoruna ");
-            out.write("**girmez** (YAML policy).\n\n");
+            out.write("- **FOUT†** (`outboundDistinctCalls`): Dış çağrı çeşitliliği. Katalog sayısıdır; ");
+            out.write("karmaşıklık ve kalite skoruna girmez.\n\n");
         }
 
         static void writeMetricHeaderRow(Writer out) throws IOException {

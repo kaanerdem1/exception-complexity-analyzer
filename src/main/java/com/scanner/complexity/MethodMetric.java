@@ -59,7 +59,11 @@ public record MethodMetric(
          * true: ölçüm JVM/PMD limiti yüzünden tamamlanamadı; CC/LOC vb. nominal,
          * risk skoru el ile yükseltildi (policy: maks. inceleme bayrağı).
          */
-        boolean metricsImputed) {
+        boolean metricsImputed,
+        /** Kalite skoru: yüksek = iyi. Karmaşıklık {@link #riskScore} alanındadır (yüksek = kötü). */
+        double qualityScore,
+        /** PDF kapsam filtresi: trivial get/set/is hem paydan hem paydadan çıkar. */
+        boolean excludedFromHealthScore) {
 
     public MethodMetric {
         halstead = halstead == null ? HalsteadMetrics.EMPTY : halstead;
@@ -79,7 +83,8 @@ public record MethodMetric(
                 emptyCatchBlocks, catchExceptionOrThrowable, catchWithOnlyPrintStackTrace, primitiveObsessionIndex,
                 maxBooleanOperatorsInCondition, maxNestingDepth, parameterCount, godMethod, riskScore, riskLevel,
                 riskFactors, riskBreakdown, halstead, exceptionSmells, codeSmells, methodHash, analysisReused,
-                accessedFieldNames, bodyHash, structuralHash, npathComplexity, ncssCount, imputed);
+                accessedFieldNames, bodyHash, structuralHash, npathComplexity, ncssCount, imputed,
+                qualityScore, excludedFromHealthScore);
     }
 
     /** EXACT_STRUCTURE duplicate gruplama: dönüş tipi + imza (parametre tipleri). */
@@ -90,7 +95,7 @@ public record MethodMetric(
         return returnType + " " + signature;
     }
 
-    /** Legacy smell/Halstead alanları boş; {@link SupplementalMetrics} doldurur. */
+    /** Koku listeleri boş bırakılır; skor {@link HealthScoreEngine} kurallarındadır. */
     static MethodMetric withoutLegacyExtensions(
             String name, String kind, String signature, String returnType, int startLine, int endLine,
             int cyclomaticComplexity, int physicalLines, int codeLines, int logicalStatements,
@@ -125,6 +130,6 @@ public record MethodMetric(
                 maxBooleanOperatorsInCondition, maxNestingDepth, parameterCount, godMethod, riskScore, riskLevel,
                 riskFactors, riskBreakdown, HalsteadMetrics.EMPTY, List.of(), List.of(), "", false, List.of(),
                 bodyHash == null ? "" : bodyHash, structuralHash == null ? "" : structuralHash, npathComplexity,
-                ncssCount, false);
+                ncssCount, false, 0, false);
     }
 }

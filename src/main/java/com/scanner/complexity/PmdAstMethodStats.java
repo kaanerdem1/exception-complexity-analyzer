@@ -138,7 +138,7 @@ final class PmdAstMethodStats {
         };
     }
 
-    /** Peak {@code &&}/{@code ||} in one if/loop condition (aligned with {@link MethodQualityMetrics}). */
+    /** Peak {@code &&}/{@code ||} in one if/loop condition. */
     private static int peakBooleanOpsInExpression(Node root) {
         int peak = 0;
         for (Node node : root.descendants()) {

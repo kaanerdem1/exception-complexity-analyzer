@@ -64,9 +64,11 @@ public record AnalysisReport(
             double averageCyclomaticComplexity,
             int maxCyclomaticComplexity,
             int godMethodCount,
-            /** LOC-ağırlıklı ortalama metod risk skoru (büyük repoda kuyruk riskini gizleyebilir). */
+            /** Uygulama karmaşıklığı: sınıf skorlarının LOC ağırlıklı ortalaması. Yüksek = kötü. */
             double projectRiskScore,
             RiskLevel projectRiskLevel,
+            /** Uygulama kalitesi: aynı sınıf LOC ağırlığı. Yüksek = iyi. Karmaşıklıkla birleştirilmez. */
+            double projectQualityScore,
             Map<RiskLevel, Long> methodRiskDistribution,
             /** YÜKSEK+KRİTİK metodların metod-LOC içindeki payı (0–1). */
             double highPlusCriticalLocRatio,
@@ -86,6 +88,7 @@ public record AnalysisReport(
             int methodCount,
             int codeLines,
             double locWeightedRiskScore,
+            double locWeightedQualityScore,
             double methodRiskScoreP95,
             double criticalMethodsPerKloc) {
     }
@@ -111,7 +114,9 @@ public record AnalysisReport(
             int hardcodedLiteralCount,
             String fileHash,
             boolean fullyReusedFromCache,
-            int methodsReusedFromCache) {
+            int methodsReusedFromCache,
+            /** Kalite: yüksek = iyi. {@link #riskScore} karmaşıklıktır: yüksek = kötü. */
+            double qualityScore) {
 
         public FileMetric {
             halstead = halstead == null ? HalsteadMetrics.EMPTY : halstead;
@@ -123,7 +128,8 @@ public record AnalysisReport(
             return new FileMetric(path, packageName, physicalLines, codeLines, classCount, methodCount,
                     totalCyclomaticComplexity, maxCyclomaticComplexity, riskScore, riskLevel, riskFactors,
                     classes, halstead, swallowedExceptionCount, genericExceptionCatchCount,
-                    rawTypeUsageCount, stringConcatInLoopCount, hardcodedLiteralCount, fileHash, true, methodCount);
+                    rawTypeUsageCount, stringConcatInLoopCount, hardcodedLiteralCount, fileHash, true, methodCount,
+                    qualityScore);
         }
 
         /** Byte hash güncellendi; metrikler önceki taramadan (yorum/boşluk-only drift). */
@@ -132,7 +138,7 @@ public record AnalysisReport(
                     totalCyclomaticComplexity, maxCyclomaticComplexity, riskScore, riskLevel, riskFactors,
                     classes, halstead, swallowedExceptionCount, genericExceptionCatchCount,
                     rawTypeUsageCount, stringConcatInLoopCount, hardcodedLiteralCount, newFileHash, true,
-                    methodCount);
+                    methodCount, qualityScore);
         }
     }
 
@@ -160,7 +166,8 @@ public record AnalysisReport(
             int genericExceptionCatchCount,
             int rawTypeUsageCount,
             int stringConcatInLoopCount,
-            int hardcodedLiteralCount) {
+            int hardcodedLiteralCount,
+            double qualityScore) {
 
         public ClassMetric {
             halstead = halstead == null ? HalsteadMetrics.EMPTY : halstead;
