@@ -47,7 +47,7 @@ final class ReportAggregates {
                             m.startLine(), m.riskScore(), m.riskLevel(), m.cyclomaticComplexity(), m.codeLines(),
                             m.maxNestingDepth(), m.parameterCount(), m.cognitiveComplexity(),
                             m.outboundDistinctCalls(), RiskBreakdownUtil.dominantDriver(m.riskBreakdown()),
-                            m.riskFactors()));
+                            m.riskFactors(), m.qualityScore()));
                 }
             }
         }

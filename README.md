@@ -477,7 +477,7 @@ Skor `health-score-catalog.yaml`. Satır sayısına göre ayrı bir tavan uygula
 
 Bazı dosyalarda PMD metrik derinliği JVM **thread stack** veya **heap** sınırına takılabilir (`StackOverflowError` / `OutOfMemoryError`). Tarayıcı artık **tüm repoyu düşürmez**: sorunlu metotlar için `errors[]` içinde **dosya + sınıf + imza + satır** kaydı oluşur; aynı metotta ölçüm yarım kaldıysa rapora **nominal yüksek metriklerle** (en az **CRITICAL** bandı, skor ≥ 80) bir satır yazılır — `riskFactors` içinde **`PMD_ANALYSIS_INCOMPLETE`** ifadesi bulunur; gerçek CC/LOC değildir, **manuel inceleme** anlamına gelir.
 
-Her metot için `VirtualMachineError` yakalanırsa **aynı dosyadaki diğer metotlara devam** edilir; yalnızca o metotta **nominal metrik + `riskScore` = 100** ve JSON’da **`metricsImputed`: true** yazılır (`riskFactors` içinde `METRICS_IMPUTED=true`). Tüm birim parse’ı veya dosya okuma burada koparsa hâlâ **dosya düzeyi** `errors[]` kalır.
+Her metot için `VirtualMachineError` yakalanırsa **aynı dosyadaki diğer metotlara devam** edilir; yalnızca o metotta **nominal metrik + `complexityScore` = 100** ve JSON’da **`metricsImputed`: true** yazılır (`riskFactors` içinde `METRICS_IMPUTED=true`). Tüm birim parse’ı veya dosya okuma burada koparsa hâlâ **dosya düzeyi** `errors[]` kalır.
 
 Operasyonel olarak:
 

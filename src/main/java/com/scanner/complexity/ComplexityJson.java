@@ -10,8 +10,8 @@ import java.io.UncheckedIOException;
 import java.util.Locale;
 
 /**
- * Analiz sonucundan veritabanına (env.method_risk_analyze, env.method_similarity) yazılacak JSON alanları.
- * Raporlardaki JSON ile aynı yapıdadır (AnalysisReportJsonWriter).
+ * Veritabanına (env.method_risk_analyze, env.method_similarity) yazılan JSON alanları.
+ * Rapor dosyası benzerlik grubu taşımaz; gruplar yalnız bu sütunlara gider.
  */
 public final class ComplexityJson {
 
@@ -22,14 +22,13 @@ public final class ComplexityJson {
         return report.tool().toLowerCase(Locale.ROOT).contains("pmd") ? "pmd-native" : "parser";
     }
 
-    /** Raporlardaki metot riskInputs nesnesi: profile, analyzedPath, pipeline, metrics, riskFactors, riskBreakdown */
+    /** Veritabanı risk_inputs_json: profil, skorlar, skora giren metrikler ve kural alt puanları. */
     public static String riskInputs(AnalysisReport report, MethodMetric m) {
         StringWriter out = new StringWriter();
         try {
             JsonWriter w = new JsonWriter(out);
             w.beginObject(); // writeRiskInputs bir alan adıyla yazar; dıştaki nesne atılır
-            AnalysisReportJsonWriter.writeRiskInputs(w, m, report.analyzedPath(), report.riskModel().version(),
-                    pipeline(report));
+            AnalysisReportJsonWriter.writeRiskInputs(w, m, report.riskModel().version(), pipeline(report));
             w.endObject();
             w.flush();
         } catch (IOException e) {

@@ -471,6 +471,7 @@ final class StandaloneReportMarkdown {
 
     private static MethodJson readMethodJson(JsonReader reader) throws IOException {
         MethodJson m = new MethodJson();
+        boolean sawLevel = false;
         reader.beginObject();
         while (reader.hasNext()) {
             switch (reader.nextName()) {
@@ -499,13 +500,19 @@ final class StandaloneReportMarkdown {
                 case "exceptionSmells" -> readExceptionSmellCounts(reader, m);
                 case "codeSmells" -> readCodeSmellCounts(reader, m);
                 case "godMethod" -> m.god = reader.nextBoolean();
-                case "riskScore" -> m.score = reader.nextDouble();
-                case "riskLevel" -> m.level = RiskLevel.valueOf(reader.nextString());
+                case "riskScore", "complexityScore" -> m.score = reader.nextDouble();
+                case "riskLevel" -> {
+                    m.level = RiskLevel.valueOf(reader.nextString());
+                    sawLevel = true;
+                }
                 case "riskBreakdown" -> m.breakdown = readBreakdownJson(reader);
                 default -> skipValue(reader);
             }
         }
         reader.endObject();
+        if (!sawLevel) {
+            m.level = RiskLevel.fromScore(m.score);
+        }
         return m;
     }
 
@@ -616,7 +623,7 @@ final class StandaloneReportMarkdown {
         int maxCc = 0;
         int godMethods = 0;
         double projectScore = 0;
-        RiskLevel projectLevel = RiskLevel.LOW;
+        RiskLevel projectLevel = null;
         double projectQuality = 0;
         double highLocRatio = 0;
         double criticalPerKloc = 0;
@@ -639,10 +646,10 @@ final class StandaloneReportMarkdown {
                 case "averageCyclomaticComplexity" -> avgCc = reader.nextDouble();
                 case "maxCyclomaticComplexity" -> maxCc = reader.nextInt();
                 case "godMethodCount" -> godMethods = reader.nextInt();
-                case "projectRiskScore" -> projectScore = reader.nextDouble();
+                case "projectRiskScore", "projectComplexityScore" -> projectScore = reader.nextDouble();
                 case "projectRiskLevel" -> projectLevel = RiskLevel.valueOf(reader.nextString());
                 case "projectQualityScore" -> projectQuality = reader.nextDouble();
-                case "projectComplexityScore", "projectComplexityBand", "projectQualityBand" -> skipValue(reader);
+                case "projectComplexityBand", "projectQualityBand" -> skipValue(reader);
                 case "highPlusCriticalLocRatio" -> highLocRatio = reader.nextDouble();
                 case "criticalMethodsPerKloc" -> criticalPerKloc = reader.nextDouble();
                 case "methodRiskScoreP95" -> p95 = reader.nextDouble();
@@ -653,6 +660,9 @@ final class StandaloneReportMarkdown {
             }
         }
         reader.endObject();
+        if (projectLevel == null) {
+            projectLevel = RiskLevel.fromScore(projectScore);
+        }
         return new AnalysisReport.Summary(filesScanned, filesParsed, filesFailed, classCount, methodCount,
                 totalCodeLines, avgCc, maxCc, godMethods, projectScore, projectLevel, projectQuality, dist,
                 highLocRatio, criticalPerKloc, p95, p99, moduleSummaries);
@@ -676,8 +686,8 @@ final class StandaloneReportMarkdown {
                     case "moduleRoot" -> moduleRoot = reader.nextString();
                     case "methodCount" -> methodCount = reader.nextInt();
                     case "codeLines" -> codeLines = reader.nextInt();
-                    case "locWeightedRiskScore" -> locWeighted = reader.nextDouble();
-                    case "locWeightedQualityScore" -> locWeightedQuality = reader.nextDouble();
+                    case "locWeightedRiskScore", "complexityScore" -> locWeighted = reader.nextDouble();
+                    case "locWeightedQualityScore", "qualityScore" -> locWeightedQuality = reader.nextDouble();
                     case "methodRiskScoreP95" -> p95 = reader.nextDouble();
                     case "criticalMethodsPerKloc" -> criticalPerKloc = reader.nextDouble();
                     default -> skipValue(reader);

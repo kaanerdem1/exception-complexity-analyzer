@@ -26,7 +26,7 @@ final class AnalysisConsoleLogger {
         err.println(TAG + " " + model.formula());
         err.println(TAG + " Metric ceilings: " + formatThresholds(model));
         err.println(TAG + " Verbose method listing: " + (verbose ? "ON" : "OFF (use --verbose)"));
-        err.println(TAG + " JSON schema: riskBreakdown per method when score is computed");
+        err.println(TAG + " JSON: complexityScore ve qualityScore, bant ve en kötü sınıf/metot");
         err.println(TAG + " ========================================");
     }
 

@@ -190,7 +190,8 @@ public record AnalysisReport(
             int cognitiveComplexity,
             int outboundDistinctCalls,
             String dominantDriver,
-            List<String> riskFactors) {
+            List<String> riskFactors,
+            double qualityScore) {
     }
 
     public record FileError(
