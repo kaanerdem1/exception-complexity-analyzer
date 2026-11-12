@@ -263,6 +263,7 @@ public final class AnalysisReportJsonWriter {
         w.name("startLine").value(m.startLine());
         w.name("endLine").value(m.endLine());
         w.name("codeLines").value(m.codeLines());
+        w.name("nonCodeLines").value(Math.max(0, m.physicalLines() - m.codeLines()));
         w.name("cyclomaticComplexity").value(m.cyclomaticComplexity());
         w.name("cognitiveComplexity").value(m.cognitiveComplexity());
         w.name("npathComplexity").value(m.npathComplexity());
@@ -270,6 +271,7 @@ public final class AnalysisReportJsonWriter {
         w.name("ncssCount").value(m.ncssCount());
         w.name("maxNestingDepth").value(m.maxNestingDepth());
         w.name("parameterCount").value(m.parameterCount());
+        w.name("emptyCatchBlocks").value(m.emptyCatchBlocks());
         w.name("complexityScore").value(m.riskScore());
         w.name("complexityBand").value(HealthScoreEngine.complexityBand(m.riskScore()));
         w.name("qualityScore").value(m.qualityScore());
@@ -288,14 +290,26 @@ public final class AnalysisReportJsonWriter {
     private static void writeReading(JsonWriter w, double methodRiskMinScore) throws IOException {
         w.name("reading");
         w.beginObject();
-        w.name("complexity").value("0-100, yüksek kötü");
-        w.name("quality").value("0-100, yüksek iyi");
+        w.name("complexity").value("0-100 puan, yüksek kötü. Kolon risk_score.");
+        w.name("quality").value("0-100 puan, yüksek iyi. Kolon quality_score.");
+        w.name("counts").value("codeLines, nonCodeLines, cyclomaticComplexity, cognitiveComplexity, "
+                + "npathComplexity, ncssCount, maxNestingDepth, parameterCount, emptyCatchBlocks count'tur. "
+                + "Puan değildir. Tablo kolonları bu sayıların aynısını okur. "
+                + "emptyCatchBlocks yolu riskBreakdown.extraSubScores.emptyCatchBlocks'tur; adında puan geçse de adettir.");
         w.name("bands").value("kalite: 90 çok iyi, 75 iyi, 50 orta, 25 zayıf, altı kritik. karmaşıklık bantları ters.");
         w.name("rollup").value("sınıf = satır ağırlıklı metot ortalaması ile sınıf kuralları, yarı yarıya. "
                 + "modül ve proje = sınıf skorunun satır ağırlıklı ortalaması.");
         w.name("omittedMethods").value("trivial get/set/is ve karmaşıklığı " + methodRiskMinScore
                 + " altındaki metotlar files içine yazılmaz. summary.methodCount onları da sayar.");
-        w.name("npathCapped").value("true ise dallanma 15 ve üstü olduğu için yol sayısı ölçülmedi, kural 0 puan.");
+        w.name("cyclomaticComplexity").value("1 metoda giriştir. Her if, for, while, do, foreach, catch, throw, "
+                + "switch case, &&, || ve üçlü ifade +1. 14 demek 13 karar noktası demektir. İç içe derinlik değildir. "
+                + "Skor tavanı 17.");
+        w.name("npathComplexity").value("Yürütme yolu sayısıdır, satır sayısı değildir. 1'den başlar. "
+                + "Art arda if, döngü, && ve || yolları çarpar; if-else ile switch kolları toplar. "
+                + "12 art arda if 4096 yoldur ve öyle yazılır. Sayım 10000'de durur. Skor 20'de dolar, "
+                + "ondan sonraki yol riski artırmaz.");
+        w.name("npathCapped").value("true ise yazılan yol sayısı tavan 10000. Sayım 10000'de durdu "
+                + "ya da dallanma 30 ve üstü olduğu için sayılmadı. 10000 gerçek yol sayısı değildir. Bu kural 0 puan.");
         w.endObject();
     }
 
@@ -318,15 +332,31 @@ public final class AnalysisReportJsonWriter {
         w.name("complexityScore").value(RiskCalculator.round3(m.riskScore()));
         w.name("qualityScore").value(RiskCalculator.round3(m.qualityScore()));
         w.name("npathCapped").value(m.npathComplexity() >= PmdMetricsAligner.NPATH_CAP);
+        w.name("units");
+        w.beginObject();
+        w.name("complexityScore").value("puan");
+        w.name("qualityScore").value("puan");
+        w.name("metrics").value("count");
+        w.name("emptyCatchBlocks").value("count");
+        w.endObject();
         w.name("metrics");
         w.beginObject();
         w.name("codeLines").value(m.codeLines());
+        w.name("nonCodeLines").value(Math.max(0, m.physicalLines() - m.codeLines()));
         w.name("cyclomaticComplexity").value(m.cyclomaticComplexity());
         w.name("cognitiveComplexity").value(m.cognitiveComplexity());
         w.name("npathComplexity").value(m.npathComplexity());
         w.name("ncssCount").value(m.ncssCount());
         w.name("maxNestingDepth").value(m.maxNestingDepth());
         w.name("parameterCount").value(m.parameterCount());
+        w.endObject();
+        // Üretilen kolon empty_catch_blocks bu yolu okur.
+        w.name("riskBreakdown");
+        w.beginObject();
+        w.name("extraSubScores");
+        w.beginObject();
+        w.name("emptyCatchBlocks").value(m.emptyCatchBlocks());
+        w.endObject();
         w.endObject();
         writeStringList(w, "riskFactors", m.riskFactors());
         w.endObject();

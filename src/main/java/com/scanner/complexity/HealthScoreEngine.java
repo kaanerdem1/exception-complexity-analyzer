@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -74,13 +75,21 @@ public final class HealthScoreEngine {
     }
 
     public MethodScore scoreMethod(Signals signals, List<Hit> hits, boolean excluded) {
+        return scoreMethod(signals, hits, excluded, Set.of());
+    }
+
+    /**
+     * {@code omittedSignals} içindeki metrik kurallar paydadan da çıkar. Ölçülemeyen
+     * parametre 0 puan yazılmaz; metot kalan kurallarla skorlanır.
+     */
+    public MethodScore scoreMethod(Signals signals, List<Hit> hits, boolean excluded, Set<String> omittedSignals) {
         if (excluded) {
             return new MethodScore(0, "COK_IYI", RiskLevel.LOW, 100, "COK_IYI",
                     List.of("excludedFromHealthScore=true"));
         }
         List<String> notes = new ArrayList<>();
-        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, notes);
-        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, notes);
+        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes);
+        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes);
         double complexity = invert(complexityRaw);
         return new MethodScore(complexity, complexityBand(complexity), complexityLevel(complexity),
                 round(qualityRaw), qualityBand(qualityRaw), List.copyOf(notes));
@@ -105,8 +114,8 @@ public final class HealthScoreEngine {
         double methodComplexity = weightSum == 0 ? 0 : complexityWeighted / weightSum;
         double methodQuality = weightSum == 0 ? 100 : qualityWeighted / weightSum;
         List<String> notes = new ArrayList<>();
-        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, notes);
-        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, notes);
+        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes);
+        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes);
         double classComplexity = invert(classComplexityRaw);
         double classQuality = classQualityRaw;
         int w1 = catalog.w1();
@@ -160,9 +169,11 @@ public final class HealthScoreEngine {
                 thresholds.put(rule.id(), List.of(rule.metricMax()));
             }
         }
-        String formula = "quality = weighted(rule scores); complexity = 100 - weighted(rule scores); "
-                + "class = (w1*locMethodAvg + w2*classRules)/(w1+w2); w1=" + catalog.w1()
-                + " w2=" + catalog.w2() + "; trivial get/set/is excluded from both sides";
+        String formula = "karmaşıklık = 100 - ağırlıklı kural puanı; "
+                + "kalite = 100 - ihlal düşüşü (kritik 40, yüksek 24, orta 16, düşük 12); "
+                + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
+                + " w2=" + catalog.w2()
+                + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
         return new AnalysisReport.RiskModel(catalog.version(), formula, weights, thresholds);
     }
 
@@ -218,22 +229,29 @@ public final class HealthScoreEngine {
     }
 
     private double average(Axis axis, Scope scope, Signals signals, List<Hit> hits, boolean recordType,
-                           List<String> notes) {
+                           Set<String> omittedSignals, List<String> notes) {
         List<Rule> rules = catalog.rules(axis, scope);
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Boolean> sealedOnly = new LinkedHashMap<>();
         if (hits != null) {
             for (Hit hit : hits) {
-                Rule rule = catalog.find(hit.ruleName());
-                if (rule == null || rule.kind() != Kind.VIOLATION) {
-                    continue;
+                for (Rule rule : rules) {
+                    if (rule.kind() != Kind.VIOLATION || !matchesHit(rule, hit.ruleName())) {
+                        continue;
+                    }
+                    counts.merge(rule.id(), 1, Integer::sum);
+                    sealedOnly.merge(rule.id(), hit.lowWeight(), (left, right) -> left && right);
                 }
-                counts.merge(rule.id(), 1, Integer::sum);
-                sealedOnly.merge(rule.id(), hit.lowWeight(), (left, right) -> left && right);
             }
+        }
+        if (axis == Axis.QUALITY) {
+            return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes);
         }
         double weightSum = 0;
         for (Rule rule : rules) {
+            if (omittedMetric(rule, omittedSignals)) {
+                continue;
+            }
             weightSum += weightOf(rule, sealedOnly);
         }
         if (weightSum <= 0) {
@@ -241,18 +259,95 @@ public final class HealthScoreEngine {
         }
         double acc = 0;
         for (Rule rule : rules) {
+            if (omittedMetric(rule, omittedSignals)) {
+                notes.add(rule.id() + " ölçülemedi, bu parametre atlandı");
+                continue;
+            }
             int weight = weightOf(rule, sealedOnly);
             if (recordType && rule.skipOnRecord()) {
                 acc += (weight / weightSum) * 100;
                 continue;
             }
-            double sub = ruleScore(rule, signals, counts.getOrDefault(rule.id(), 0));
+            int hitsForRule = counts.getOrDefault(rule.id(), 0);
+            double sub = ruleScore(rule, signals, hitsForRule);
             acc += (weight / weightSum) * sub;
             if (sub < 80) {
-                notes.add(rule.concept() + " " + rule.id() + " sub=" + round(sub));
+                notes.add(scoreNote(rule, signals, hitsForRule, sub));
             }
         }
         return acc;
+    }
+
+    /**
+     * Kalite 100'den başlar. İhlal edilen kural, önceliğine göre doğrudan düşürür.
+     * İhlalsiz kurallar paydaya girmez; yoksa skor 80'lerin üstünde yapışır.
+     * Kritik tam ihlal 40, yüksek 24, orta 16, düşük 12 puan düşürür.
+     */
+    private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
+                                    Map<String, Boolean> sealedOnly, boolean recordType,
+                                    Set<String> omittedSignals, List<String> notes) {
+        double deduction = 0;
+        for (Rule rule : rules) {
+            if (omittedMetric(rule, omittedSignals)) {
+                notes.add(rule.id() + " ölçülemedi, bu parametre atlandı");
+                continue;
+            }
+            if (recordType && rule.skipOnRecord()) {
+                continue;
+            }
+            int hitsForRule = counts.getOrDefault(rule.id(), 0);
+            double sub = ruleScore(rule, signals, hitsForRule);
+            if (sub >= 100) {
+                continue;
+            }
+            int weight = weightOf(rule, sealedOnly);
+            double slice = qualitySlice(weight);
+            deduction += ((100.0 - sub) / 100.0) * slice;
+            if (sub < 80) {
+                notes.add(scoreNote(rule, signals, hitsForRule, sub));
+            }
+        }
+        return Math.max(0, 100.0 - deduction);
+    }
+
+    private String scoreNote(Rule rule, Signals signals, int hitsForRule, double sub) {
+        String note = rule.concept() + " " + rule.id() + " sub=" + round(sub);
+        if (rule.kind() == Kind.METRIC) {
+            note += " sayım=" + signal(signals, rule.signal()) + " tavan=" + rule.metricMax();
+        } else if (hitsForRule > 0 && rule.penalty() < 100) {
+            note += " adet=" + hitsForRule;
+        }
+        return note;
+    }
+
+    private static double qualitySlice(int weight) {
+        if (weight >= 10) {
+            return 40;
+        }
+        if (weight >= 6) {
+            return 24;
+        }
+        if (weight >= 3) {
+            return 16;
+        }
+        return 12;
+    }
+
+    private static boolean matchesHit(Rule rule, String ruleName) {
+        if (ruleName == null) {
+            return false;
+        }
+        if (ruleName.equals(rule.id())) {
+            return true;
+        }
+        return rule.aliases().contains(ruleName);
+    }
+
+    private static boolean omittedMetric(Rule rule, Set<String> omittedSignals) {
+        return rule.kind() == Kind.METRIC
+                && rule.signal() != null
+                && omittedSignals != null
+                && omittedSignals.contains(rule.signal());
     }
 
     private int weightOf(Rule rule, Map<String, Boolean> sealedOnly) {
@@ -271,7 +366,8 @@ public final class HealthScoreEngine {
         if (hits <= 0) {
             return 100;
         }
-        return Math.max(0, 100.0 - Math.min(100, hits * 100.0));
+        int penalty = rule.penalty() < 1 ? 100 : rule.penalty();
+        return Math.max(0, 100.0 - Math.min(100, hits * (double) penalty));
     }
 
     private static int signal(Signals signals, String name) {

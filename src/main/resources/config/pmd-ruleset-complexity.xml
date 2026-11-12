@@ -9,7 +9,7 @@
         karmaşıklık ve kalite ayrı hesaplanır.
         NPath her metotta kontrol akış sayacıyla ölçülür ve karmaşıklık skoruna girer.
         NPathComplexity kuralı ruleset'te yoktur.
-        Yol sayısı skor tavanına (200) varınca sayım durur. Dallanma 15 ve üstünde sayım yapılmaz (npathCapped).
+        Yol sayısı 10000'e varınca sayım durur ve 10000 yazılır. 12 art arda if 4096 yoldur, gerçek sayı yazılır. Skor 20 yolda 0 olur. Dallanma 30 ve üstünde de sayım yapılmaz, 10000 yazılır.
         Hashtable/Vector/Date ve EJB kuralları katalogda yok.
     </description>
 

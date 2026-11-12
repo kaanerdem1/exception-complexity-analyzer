@@ -19,8 +19,10 @@ import net.sourceforge.pmd.lang.metrics.Metric;
 import net.sourceforge.pmd.lang.metrics.MetricOptions;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** PMD AST + JavaMetrics ile metod katalogu ve risk (JavaParser kullanılmaz). */
 final class PmdFileMetricsBuilder {
@@ -52,13 +54,34 @@ final class PmdFileMetricsBuilder {
                             String fileHash, List<FileError> methodLevelErrors) {
         return PmdMetricsAligner.withParseSession(languageLevel, session -> {
             try {
-                ASTCompilationUnit unit = session.parse(sourceText, relativePath);
+                ASTCompilationUnit unit = parseTree(session, sourceText, relativePath);
                 return buildFromUnit(relativePath, sourceText, unit, fileViolations, riskCalculator,
                         attachDuplicateHashes, previousMethods, fileHash, methodLevelErrors);
+            } catch (RuntimeException e) {
+                throw e;
             } catch (Exception e) {
                 throw new RuntimeException(relativePath + ": " + e.getMessage(), e);
             }
         });
+    }
+
+    /**
+     * Ağaç kurulamazsa metotlar ayrılamaz. Önce 16MB, yetmezse 32MB yığın denenir.
+     * Metot içindeki taşma buraya çıkmaz; o metot ayrıca ölçülür.
+     */
+    private static ASTCompilationUnit parseTree(PmdMetricsAligner.PmdParseSession session, String sourceText,
+                                                 String relativePath) throws Exception {
+        try {
+            return DeepStack.call(DeepStack.STANDARD, () -> session.parse(sourceText, relativePath));
+        } catch (VirtualMachineError first) {
+            try {
+                return DeepStack.call(DeepStack.TALL, () -> session.parse(sourceText, relativePath));
+            } catch (VirtualMachineError second) {
+                throw new RuntimeException(relativePath
+                        + ": sözdizimi ağacı kurulamadı, metotlar ayrılamadı. Yığın 16MB ve 32MB denendi.",
+                        second);
+            }
+        }
     }
 
     private static FileMetric buildFromUnit(String relativePath, String sourceText, ASTCompilationUnit unit,
@@ -106,8 +129,8 @@ final class PmdFileMetricsBuilder {
         java.util.LinkedHashMap<String, MethodMetric> methodsByLine = new java.util.LinkedHashMap<>();
         String className = simpleName;
         for (ASTExecutableDeclaration exec : type.getOperations().toList()) {
-            MethodMetric built = buildMethod(relativePath, exec, sourceText, fileViolations, options, riskCalculator,
-                    attachDuplicateHashes, className, previousMethods, methodLevelErrors);
+            MethodMetric built = measureMethod(relativePath, exec, sourceText, fileViolations, options,
+                    riskCalculator, attachDuplicateHashes, className, previousMethods, methodLevelErrors);
             String lineKey = built.startLine() + "#" + built.name();
             MethodMetric previous = methodsByLine.get(lineKey);
             if (previous == null || methodSpan(built) > methodSpan(previous)) {
@@ -136,6 +159,77 @@ final class PmdFileMetricsBuilder {
                 methods, HalsteadMetrics.EMPTY, List.of(), 0.0, godClass, 0, 0, 0, 0, 0, classScore.quality());
     }
 
+    /**
+     * Metot ölçümü geniş yığında yürür. Taşan parametre paydadan çıkar; metot
+     * ölçülen parametrelerle skorlanır. Dosyanın sonraki metotları sürer.
+     */
+    private static MethodMetric measureMethod(String relativePath, ASTExecutableDeclaration exec, String sourceText,
+                                               List<PmdViolationRow> fileViolations, MetricOptions options,
+                                               RiskCalculator riskCalculator, boolean attachDuplicateHashes,
+                                               String className, Map<String, MethodMetric> previousMethods,
+                                               List<FileError> methodLevelErrors) {
+        MethodIdentity[] seen = new MethodIdentity[1];
+        try {
+            return DeepStack.call(DeepStack.STANDARD, () -> {
+                seen[0] = MethodIdentity.capture(exec, sourceText);
+                return buildMethod(relativePath, exec, sourceText, fileViolations, options, riskCalculator,
+                        attachDuplicateHashes, className, previousMethods, methodLevelErrors);
+            });
+        } catch (VirtualMachineError overflow) {
+            MethodIdentity id = seen[0] != null ? seen[0] : MethodIdentity.unknown(exec);
+            recordMethodMetricFailure(methodLevelErrors, relativePath, className, id.signature, id.start, id.end,
+                    overflow);
+            return failedMethodStub(sourceText, id.name, id.kind, id.signature, id.returnType, id.start, id.end,
+                    id.physical, id.arity, riskCalculator, attachDuplicateHashes);
+        } catch (Exception e) {
+            throw new RuntimeException(relativePath + ": " + e.getMessage(), e);
+        }
+    }
+
+    private static final class MethodIdentity {
+        final String name;
+        final String kind;
+        final String signature;
+        final String returnType;
+        final int start;
+        final int end;
+        final int physical;
+        final int arity;
+
+        private MethodIdentity(String name, String kind, String signature, String returnType, int start, int end,
+                                int physical, int arity) {
+            this.name = name;
+            this.kind = kind;
+            this.signature = signature;
+            this.returnType = returnType;
+            this.start = start;
+            this.end = end;
+            this.physical = physical;
+            this.arity = arity;
+        }
+
+        static MethodIdentity capture(ASTExecutableDeclaration exec, String sourceText) {
+            String name = exec.getName();
+            String kind = exec instanceof ASTConstructorDeclaration ? "CONSTRUCTOR" : "METHOD";
+            int arity = exec.getArity();
+            String signature = methodSignature(exec);
+            int start = exec.getBeginLine();
+            int end = resolveMethodEndLine(sourceText, start, exec.getEndLine());
+            int physical = Math.max(0, end - start + 1);
+            return new MethodIdentity(name, kind, signature, returnType(exec), start, end, physical, arity);
+        }
+
+        static MethodIdentity unknown(ASTExecutableDeclaration exec) {
+            int line = 0;
+            try {
+                line = exec.getBeginLine();
+            } catch (VirtualMachineError ignored) {
+                line = 0;
+            }
+            return new MethodIdentity("?", "METHOD", "?", "", line, line, 1, 0);
+        }
+    }
+
     private static MethodMetric buildMethod(String relativePath, ASTExecutableDeclaration exec, String sourceText,
                                             List<PmdViolationRow> fileViolations, MetricOptions options,
                                             RiskCalculator riskCalculator, boolean attachDuplicateHashes,
@@ -153,30 +247,57 @@ final class PmdFileMetricsBuilder {
                     attachDuplicateHashes, className, previousMethods);
         }
         try {
-            int cyclo = unboxOrZero(Metric.compute(JavaMetrics.CYCLO, exec, options));
-            int ncss = unboxOrZero(Metric.compute(JavaMetrics.NCSS, exec, options));
-            int cognitive = unboxOrZero(Metric.compute(JavaMetrics.COGNITIVE_COMPLEXITY, exec, options));
-            int npath = PmdMetricsAligner.safeNpath(exec, cyclo);
-            PmdAstMethodStats.Stats stats = PmdAstMethodStats.analyze(exec);
+            Integer cycloBox = measureParameter(() -> unboxOrZero(Metric.compute(JavaMetrics.CYCLO, exec, options)));
+            Integer ncssBox = measureParameter(() -> unboxOrZero(Metric.compute(JavaMetrics.NCSS, exec, options)));
+            Integer cognitiveBox = measureParameter(
+                    () -> unboxOrZero(Metric.compute(JavaMetrics.COGNITIVE_COMPLEXITY, exec, options)));
+            Integer npathBox = cycloBox != null && PmdHeavyMetricGuard.skipExplosiveMetrics(cycloBox)
+                    ? PmdMetricsAligner.NPATH_CAP
+                    : measureParameter(() -> BoundedNPath.compute(exec));
+            PmdAstMethodStats.Stats stats = measureParameter(() -> PmdAstMethodStats.analyze(exec));
+            Set<String> omitted = new LinkedHashSet<>();
+            if (cycloBox == null) {
+                omitted.add("cyclomaticComplexity");
+            }
+            if (cognitiveBox == null) {
+                omitted.add("cognitiveComplexity");
+            }
+            if (npathBox == null) {
+                omitted.add("npathComplexity");
+            }
+            if (ncssBox == null) {
+                omitted.add("ncssCount");
+            }
+            if (stats == null) {
+                omitted.add("maxNestingDepth");
+            }
+            int cyclo = cycloBox == null ? 0 : cycloBox;
+            int ncss = ncssBox == null ? 0 : ncssBox;
+            int cognitive = cognitiveBox == null ? 0 : cognitiveBox;
+            int npath = npathBox == null ? 0 : npathBox;
+            PmdAstMethodStats.Stats counted = stats == null ? PmdAstMethodStats.EMPTY : stats;
             // Risk LOC = NCSS (yorum / boş satır hariç). physical satır aralığı yorumları da kapsar — skora girmez.
             int codeLines = ncss > 0 ? ncss : Math.max(countCodeLinesExcludingComments(sourceText, start, end), 1);
 
             MethodMetric skeleton = MethodMetric.withoutLegacyExtensions(
                     name, kind, signature, returnType(exec), start, end,
-                    cyclo, physical, codeLines, stats.logicalStatements(), cognitive, stats.exitPoints(),
-                    stats.catchClauses(), stats.switchCases(), 0, stats.lambdaCount(), stats.maxTryNestingDepth(),
-                    stats.localVariableCount(), 0, stats.emptyCatchBlocks(), stats.catchExceptionOrThrowable(), 0,
-                    0, stats.maxBooleanOperatorsInCondition(), stats.maxNestingDepth(), arity,
+                    cyclo, physical, codeLines, counted.logicalStatements(), cognitive, counted.exitPoints(),
+                    counted.catchClauses(), counted.switchCases(), 0, counted.lambdaCount(), counted.maxTryNestingDepth(),
+                    counted.localVariableCount(), 0, counted.emptyCatchBlocks(), counted.catchExceptionOrThrowable(), 0,
+                    0, counted.maxBooleanOperatorsInCondition(), counted.maxNestingDepth(), arity,
                     false, 0.0, RiskLevel.LOW, List.of(), null, "", "", npath, ncss);
 
-            boolean trivialBody = MethodAccessorFilter.isSingleStatementAccessor(
-                    kind, name, arity, cyclo, stats.logicalStatements(), stats.exitPoints(),
-                    stats.catchClauses(), stats.localVariableCount());
+            boolean trivialBody = stats != null && MethodAccessorFilter.isSingleStatementAccessor(
+                    kind, name, arity, cyclo, counted.logicalStatements(), counted.exitPoints(),
+                    counted.catchClauses(), counted.localVariableCount());
             HealthScoreEngine engine = HealthScoreEngine.get();
             HealthScoreEngine.Signals signals = new HealthScoreEngine.Signals(
-                    cyclo, cognitive, npath, codeLines, arity, stats.maxNestingDepth());
+                    cyclo, cognitive, npath, codeLines, arity, counted.maxNestingDepth());
+            List<HealthScoreEngine.Hit> hits = hitsInRange(fileViolations, start, end, exec);
+            int emptyCatch = emptyCatchCount(hits, counted.emptyCatchBlocks());
+            hits = withEmptyCatchHits(hits, emptyCatch);
             HealthScoreEngine.MethodScore health = engine.scoreMethod(
-                    signals, hitsInRange(fileViolations, start, end, exec), trivialBody);
+                    signals, hits, trivialBody, omitted);
             boolean god = !trivialBody && engine.godMethod(signals);
 
             PmdSourceMethodHashes.Hashes hashes = PmdSourceMethodHashes.fromSourceSlice(sourceText, start, end);
@@ -195,7 +316,10 @@ final class PmdFileMetricsBuilder {
             double complexity = health.complexity();
             RiskLevel level = health.complexityLevel();
             List<String> factors = new ArrayList<>(health.notes());
-            if (!trivialBody) {
+            if (!trivialBody && cycloBox != null) {
+                factors.add(cycloFactor(cyclo));
+            }
+            if (!trivialBody && npathBox != null) {
                 factors.add(npathFactor(cyclo, npath));
             }
             double quality = health.quality();
@@ -210,16 +334,27 @@ final class PmdFileMetricsBuilder {
             }
 
             return new MethodMetric(name, kind, signature, returnType(exec), start, end, cyclo, physical, codeLines,
-                    stats.logicalStatements(), cognitive, stats.exitPoints(), stats.catchClauses(), stats.switchCases(),
-                    0, stats.lambdaCount(), stats.maxTryNestingDepth(), stats.localVariableCount(),
-                    0, stats.emptyCatchBlocks(), stats.catchExceptionOrThrowable(),
-                    0, 0, stats.maxBooleanOperatorsInCondition(), stats.maxNestingDepth(), arity, god,
+                    counted.logicalStatements(), cognitive, counted.exitPoints(), counted.catchClauses(), counted.switchCases(),
+                    0, counted.lambdaCount(), counted.maxTryNestingDepth(), counted.localVariableCount(),
+                    0, emptyCatch, counted.catchExceptionOrThrowable(),
+                    0, 0, counted.maxBooleanOperatorsInCondition(), counted.maxNestingDepth(), arity, god,
                     complexity, level, factors, null, HalsteadMetrics.EMPTY, List.of(), List.of(), methodHash, reuse, List.of(),
-                    bodyHash, structuralOut, npath, ncss, false, quality, excluded);
+                    bodyHash, structuralOut, npath, ncss, !omitted.isEmpty(), quality, excluded);
         } catch (VirtualMachineError e) {
             recordMethodMetricFailure(methodLevelErrors, relativePath, className, signature, start, end, e);
             return failedMethodStub(sourceText, name, kind, signature, returnType(exec), start, end, physical, arity,
                     riskCalculator, attachDuplicateHashes);
+        }
+    }
+
+    /** Bir parametrenin yığını taşarsa null döner. Metot bu parametre olmadan skorlanır. */
+    private static <T> T measureParameter(DeepStack.Task<T> task) {
+        try {
+            return DeepStack.call(DeepStack.STANDARD, task);
+        } catch (VirtualMachineError overflow) {
+            return null;
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage(), e);
         }
     }
 
@@ -272,18 +407,49 @@ final class PmdFileMetricsBuilder {
                 methodHash, reuse, List.of(), bodyHash, structuralOut, npath, ncss, true, 0, false);
     }
 
+    private static String cycloFactor(int cyclo) {
+        int decisions = Math.max(0, cyclo - 1);
+        return "döngüsel karmaşıklık " + cyclo + ": 1 metoda giriştir, kalan " + decisions
+                + " her if, for, while, do, foreach, catch, throw, switch case, &&, || ve üçlü ifadeden bir kez sayılır."
+                + " İç içe derinlik değildir. Skor tavanı " + metricMax("CyclomaticComplexity", 17) + ".";
+    }
+
     private static String npathFactor(int cyclo, int npath) {
-        int ceiling = BoundedNPath.scoreLimit();
-        if (npath >= PmdMetricsAligner.NPATH_CAP) {
+        int countCap = BoundedNPath.scoreLimit();
+        int scoreMax = npathScoreMax();
+        String how = " Metot 1 yolla başlar. Art arda if, döngü, && ve || yolları çarpar;"
+                + " if-else ile switch kolları toplar. Satır sayısı değildir.";
+        if (PmdHeavyMetricGuard.skipExplosiveMetrics(cyclo)) {
             return "npath: dallanma " + cyclo + " (>= " + PmdHeavyMetricGuard.CYCLO_HEAVY
-                    + "), sayım yapılmadı, tavan " + PmdMetricsAligner.NPATH_CAP
-                    + " yazıldı. Bu kural 0 puan. CC, cognitive, satır, derinlik ve parametre ölçüldü.";
+                    + "), sayım yapılmadı, tavan " + countCap
+                    + " yazıldı. Bu " + countCap + " gerçek yol sayısı değildir."
+                    + " Skor tavanı " + scoreMax + ", bu kural 0 puan.";
         }
-        if (npath >= ceiling) {
-            return "npath: yol sayısı skor tavanı " + ceiling
-                    + " değerine vardı, sayım durdu. Bu kural 0 puan. Daha büyük bir yol sayısı da aynı puanı verir.";
+        if (npath >= countCap) {
+            return "npath: yol sayısı sayım tavanı " + countCap
+                    + " değerine vardı, sayım durdu." + how
+                    + " " + countCap + " gerçek yol değil, durulan tavandır. Skor tavanı " + scoreMax
+                    + ", bu kural 0 puan. Daha büyük bir yol sayısı da aynı puanı verir.";
         }
-        return "npath: ölçülen yol sayısı " + npath + " (skor tavanı " + ceiling + " altı, tam sayı).";
+        if (npath >= scoreMax) {
+            return "npath: ölçülen yol sayısı " + npath + "." + how
+                    + " " + npath + " sayım tavanı " + countCap + " altında olduğu için gerçek yoldur, yuvarlama değildir."
+                    + " Skor tavanı " + scoreMax + ", bu kural 0 puan. Sayım " + countCap + " değerine kadar sürer.";
+        }
+        return "npath: ölçülen yol sayısı " + npath + "." + how
+                + " Skor tavanı " + scoreMax + " altı, tam sayı.";
+    }
+
+    private static int npathScoreMax() {
+        return metricMax("NPathComplexity", 20);
+    }
+
+    private static int metricMax(String ruleId, int fallback) {
+        HealthScoreCatalog.Rule rule = HealthScoreEngine.get().catalog().find(ruleId);
+        if (rule == null || rule.metricMax() < 1) {
+            return fallback;
+        }
+        return rule.metricMax();
     }
 
     private static String analysisFailureDetail(Throwable t) {
@@ -326,6 +492,36 @@ final class PmdFileMetricsBuilder {
                 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, arity, false, 0.0, RiskLevel.LOW,
                 List.of("excludedFromHealthScore=true"), null, HalsteadMetrics.EMPTY, List.of(), List.of(),
                 methodHash, reuse, List.of(), bodyHash, structuralOut, 1, loc, false, 100, true);
+    }
+
+    /** PMD ihlali ile AST sayısından büyük olan. Skor ve tablo aynı adedi kullanır. */
+    private static int emptyCatchCount(List<HealthScoreEngine.Hit> hits, int astCount) {
+        int fromRules = 0;
+        if (hits != null) {
+            for (HealthScoreEngine.Hit hit : hits) {
+                if ("EmptyCatchBlock".equals(hit.ruleName())) {
+                    fromRules++;
+                }
+            }
+        }
+        return Math.max(fromRules, Math.max(0, astCount));
+    }
+
+    private static List<HealthScoreEngine.Hit> withEmptyCatchHits(List<HealthScoreEngine.Hit> hits, int total) {
+        int present = 0;
+        List<HealthScoreEngine.Hit> copy = new ArrayList<>();
+        if (hits != null) {
+            for (HealthScoreEngine.Hit hit : hits) {
+                copy.add(hit);
+                if ("EmptyCatchBlock".equals(hit.ruleName())) {
+                    present++;
+                }
+            }
+        }
+        for (int i = present; i < total; i++) {
+            copy.add(new HealthScoreEngine.Hit("EmptyCatchBlock"));
+        }
+        return copy;
     }
 
     private static List<HealthScoreEngine.Hit> hitsInRange(List<PmdViolationRow> violations, int start, int end) {

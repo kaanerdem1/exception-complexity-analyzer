@@ -29,6 +29,8 @@ final class PmdAstMethodStats {
             int maxBooleanOperatorsInCondition) {
     }
 
+    static final Stats EMPTY = new Stats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
     private PmdAstMethodStats() {
     }
 

@@ -6,7 +6,7 @@ package com.scanner.complexity;
  */
 final class PmdHeavyMetricGuard {
 
-    static final int CYCLO_HEAVY = 15;
+    static final int CYCLO_HEAVY = 30;
 
     private PmdHeavyMetricGuard() {
     }

@@ -41,8 +41,8 @@ import net.sourceforge.pmd.lang.java.ast.ReturnScopeNode;
 import net.sourceforge.pmd.lang.java.ast.internal.JavaAstUtils;
 
 /**
- * PMD 7.29 NPath sayacının aynı yürüyüşü. Yol sayısı skor tavanına varınca durur.
- * Tavanın altındaki sonuç PMD ile aynıdır. Tavan ve üstü bu kuralda 0 puandır.
+ * PMD 7.29 NPath sayacının aynı yürüyüşü. Yol sayısı sayım tavanına varınca durur.
+ * Tavanın altındaki sonuç PMD ile aynıdır. Skor daha düşük katalog tavanında sıfırlanır.
  */
 final class BoundedNPath {
 
@@ -74,12 +74,9 @@ final class BoundedNPath {
         }
     }
 
+    /** Sayım burada durur. Skor daha düşük tavanla (katalog metric_max) sıfırlanır. */
     static int scoreLimit() {
-        HealthScoreCatalog.Rule rule = HealthScoreEngine.get().catalog().find("NPathComplexity");
-        if (rule == null || rule.metricMax() < 1) {
-            return 200;
-        }
-        return rule.metricMax();
+        return PmdMetricsAligner.NPATH_CAP;
     }
 
     private static long guardedAdd(long a, long b) {

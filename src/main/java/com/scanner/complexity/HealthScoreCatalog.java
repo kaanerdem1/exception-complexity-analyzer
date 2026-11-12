@@ -36,7 +36,8 @@ public final class HealthScoreCatalog {
             String signal,
             int metricMax,
             boolean skipOnRecord,
-            List<String> aliases) {
+            List<String> aliases,
+            int penalty) {
     }
 
     private final String version;
@@ -131,6 +132,10 @@ public final class HealthScoreCatalog {
                 ? Scope.CLASS : Scope.METHOD;
         Kind kind = "metric".equalsIgnoreCase(stringOr(map.get("kind"), "violation"))
                 ? Kind.METRIC : Kind.VIOLATION;
+        int penalty = asInt(map.get("penalty"), 100);
+        if (penalty < 1) {
+            penalty = 100;
+        }
         return new Rule(
                 stringOr(map.get("id"), ""),
                 stringOr(map.get("concept"), stringOr(map.get("id"), "")),
@@ -141,7 +146,8 @@ public final class HealthScoreCatalog {
                 stringOr(map.get("signal"), ""),
                 asInt(map.get("metric_max"), 1),
                 Boolean.TRUE.equals(map.get("skip_on_record")),
-                List.copyOf(aliases));
+                List.copyOf(aliases),
+                Math.min(100, penalty));
     }
 
     public String version() {

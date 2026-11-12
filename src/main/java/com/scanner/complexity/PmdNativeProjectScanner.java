@@ -438,8 +438,8 @@ public final class PmdNativeProjectScanner {
 
     private static String metricsFailureDetail(Throwable t) {
         if (t instanceof StackOverflowError) {
-            return "Yığın taştı (stack overflow): ifade veya AST iç içe geçmesi çok derin. "
-                    + "Bu dosya atlandı, diğer dosyalar taranmaya devam eder.";
+            return "Yığın taştı (stack overflow): dosyanın sözdizimi ağacı kurulamadı, metotlar ayrılamadı. "
+                    + "Tek metodun taşması dosyayı düşürmez. Bu dosya atlandı, diğer dosyalar taranmaya devam eder.";
         }
         if (t instanceof OutOfMemoryError) {
             return "Bellek yetmedi (out of memory): bu dosya ölçülürken heap doldu. "

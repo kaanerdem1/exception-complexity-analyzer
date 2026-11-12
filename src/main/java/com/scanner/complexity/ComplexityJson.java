@@ -22,7 +22,7 @@ public final class ComplexityJson {
         return report.tool().toLowerCase(Locale.ROOT).contains("pmd") ? "pmd-native" : "parser";
     }
 
-    /** Veritabanı risk_inputs_json: profil, skorlar, skora giren metrikler ve kural alt puanları. */
+    /** Veritabanı risk_inputs_json. metrics ve emptyCatchBlocks count'tur; iki skor puandır. */
     public static String riskInputs(AnalysisReport report, MethodMetric m) {
         StringWriter out = new StringWriter();
         try {

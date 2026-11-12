@@ -4,10 +4,9 @@
 # Ölçüm tavanı (bu değerde kural skoru 0) Apache Commons Lang src/main/java ile kalibre edildi:
 # 264 dosya, 3520 metot, 2026-11-09. CC 17, cognitive 21, satır 36 aynı koşunun p99'u.
 # p90 (5 / 5 / 10 / 4) ruleset'in ihlal çizgisinin altında kalıyordu; skor sıfır, ihlal henüz yok olurdu.
-# NPath skor tavanı 200. Sayılan metotların p99'u 16 idi; en yüksek sayılan yol 257.
-# 16, dört bağımsız if'te doluyordu. 200, sayılan aralığı ayırır.
-# Sayım, yürüyen yol sayısı 200'e varınca durur ve 200 yazılır. 200 ve üstü bu kuralda 0 puandır;
-# tavanın altındaki sayı PMD ile aynıdır. Dallanma 15 ve üstü hiç sayılmaz, 2e9 yazılır, o da 0 puandır.
+# NPath sayım tavanı 10000. 12 art arda if 4096 yoldur ve gerçek sayı yazılır. 10000'e varınca durur.
+# Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. Skor tavanı 20'dir; 20 ile 10000 aynı riski verir.
+# İç içe geçme skor tavanı 10. Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
 
 version: health-v1
 priority_weights:
@@ -39,6 +38,7 @@ rules:
     axis: complexity
     scope: method
     priority: critical
+    weight: 14
     kind: metric
     signal: cyclomaticComplexity
     metric_max: 17
@@ -48,6 +48,7 @@ rules:
     axis: complexity
     scope: method
     priority: critical
+    weight: 14
     kind: metric
     signal: cognitiveComplexity
     metric_max: 21
@@ -58,7 +59,7 @@ rules:
     priority: critical
     kind: metric
     signal: npathComplexity
-    metric_max: 200
+    metric_max: 20
   - id: NcssCount
     concept: length
     axis: complexity
@@ -81,11 +82,21 @@ rules:
     concept: nesting
     axis: complexity
     scope: method
-    priority: high
+    priority: critical
+    weight: 14
     kind: metric
     signal: maxNestingDepth
-    metric_max: 5
+    metric_max: 10
     aliases: [NestedBlockDepth, nesting]
+  - id: EmptyCatchOnRisk
+    concept: swallowed_exception
+    axis: complexity
+    scope: method
+    priority: high
+    weight: 8
+    kind: violation
+    penalty: 25
+    aliases: [EmptyCatchBlock, SwallowedException]
 
   # --- Karmaşıklık: sınıf ihlali ---
   - id: GodClass
@@ -218,13 +229,13 @@ rules:
     concept: constructor_override
     axis: quality
     scope: method
-    priority: critical
+    priority: high
     kind: violation
   - id: NullAssignment
     concept: null_assignment
     axis: quality
     scope: method
-    priority: critical
+    priority: high
     kind: violation
     aliases: [UnsafeCallOnNullableType, force_unwrapping]
   - id: CloseResource
@@ -239,6 +250,8 @@ rules:
     scope: method
     priority: critical
     kind: violation
+    # Her boş catch bu kuraldan 25 puan düşer. 1→75, 2→50, 3→25, 4 ve üstü→0.
+    penalty: 25
     aliases: [SwallowedException]
   - id: AvoidCatchingGenericException
     concept: generic_catch
@@ -299,7 +312,7 @@ rules:
     concept: concurrent_map
     axis: quality
     scope: method
-    priority: critical
+    priority: medium
     kind: violation
   - id: CheckResultSet
     concept: unchecked_resultset
@@ -318,20 +331,20 @@ rules:
     concept: duplicate_literals
     axis: quality
     scope: class
-    priority: high
+    priority: low
     kind: violation
     aliases: [StringLiteralDuplication]
   - id: BrokenNullCheck
     concept: broken_null_check
     axis: quality
     scope: method
-    priority: high
+    priority: critical
     kind: violation
   - id: MisplacedNullCheck
     concept: misplaced_null_check
     axis: quality
     scope: method
-    priority: high
+    priority: critical
     kind: violation
   - id: SuspiciousEqualsMethodName
     concept: suspicious_equals
@@ -349,7 +362,7 @@ rules:
     concept: string_equals
     axis: quality
     scope: method
-    priority: high
+    priority: critical
     kind: violation
   - id: AvoidThrowingRawExceptionTypes
     concept: raw_throw
@@ -362,20 +375,20 @@ rules:
     concept: print_stack_trace
     axis: quality
     scope: method
-    priority: high
+    priority: critical
     kind: violation
     aliases: [PrintStackTrace]
   - id: UseTryWithResources
     concept: try_with_resources
     axis: quality
     scope: method
-    priority: high
+    priority: critical
     kind: violation
   - id: PreserveStackTrace
     concept: lost_stack
     axis: quality
     scope: method
-    priority: high
+    priority: critical
     kind: violation
   - id: DontCallThreadRun
     concept: thread_run
@@ -399,43 +412,43 @@ rules:
     concept: alloc_in_loop
     axis: quality
     scope: method
-    priority: high
+    priority: low
     kind: violation
   - id: InefficientStringBuffering
     concept: string_concat_loop
     axis: quality
     scope: method
-    priority: high
+    priority: low
     kind: violation
   - id: UseStringBufferForStringAppends
     concept: string_concat_loop
     axis: quality
     scope: method
-    priority: high
+    priority: low
     kind: violation
   - id: GuardLogStatement
     concept: guard_log
     axis: quality
     scope: method
-    priority: high
+    priority: low
     kind: violation
   - id: UseExplicitTypes
     concept: explicit_types
     axis: quality
     scope: method
-    priority: high
+    priority: low
     kind: violation
   - id: AvoidSynchronizedAtMethodLevel
     concept: synchronized_method
     axis: quality
     scope: method
-    priority: high
+    priority: medium
     kind: violation
   - id: AvoidSynchronizedStatement
     concept: synchronized_block
     axis: quality
     scope: method
-    priority: high
+    priority: medium
     kind: violation
   - id: IdenticalCatchBranches
     concept: identical_catch
@@ -459,7 +472,7 @@ rules:
     concept: exception_flow
     axis: quality
     scope: method
-    priority: medium
+    priority: high
     kind: violation
   - id: AvoidRethrowingException
     concept: rethrow
@@ -478,135 +491,135 @@ rules:
     concept: system_out
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: AvoidLiteralsInIfCondition
     concept: magic_condition
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
     aliases: [MagicNumber]
   - id: UnusedPrivateField
     concept: unused_member
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
     aliases: [UnusedPrivateMember]
   - id: UnusedPrivateMethod
     concept: unused_member
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: UnusedLocalVariable
     concept: unused_local
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: LooseCoupling
     concept: loose_coupling
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: ConfusingTernary
     concept: confusing_ternary
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: ControlStatementBraces
     concept: missing_braces
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: ClassNamingConventions
     concept: naming
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: MethodNamingConventions
     concept: naming
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: FieldNamingConventions
     concept: naming
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: ForLoopCanBeForeach
     concept: foreach
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: LiteralsFirstInComparisons
     concept: literal_first
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: CommentRequired
     concept: missing_comment
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: UncommentedEmptyMethodBody
     concept: empty_body_comment
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: UncommentedEmptyConstructor
     concept: empty_body_comment
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: UseDiamondOperator
     concept: diamond
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: LambdaCanBeMethodReference
     concept: method_reference
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: UseUnderscoresInNumericLiterals
     concept: numeric_underscores
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: ConsecutiveAppendsShouldReuse
     concept: consecutive_append
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: AvoidArrayLoops
     concept: array_copy
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: ConsecutiveLiteralAppends
     concept: literal_appends
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: PrimitiveWrapperInstantiation
     concept: wrapper_new
@@ -618,19 +631,19 @@ rules:
     concept: log_format
     axis: quality
     scope: method
-    priority: high
+    priority: medium
     kind: violation
   - id: MoreThanOneLogger
     concept: logger_count
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: ProperLogger
     concept: logger_declaration
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: UnnecessaryCaseChange
     concept: case_change
@@ -648,19 +661,19 @@ rules:
     concept: volatile_field
     axis: quality
     scope: class
-    priority: medium
+    priority: low
     kind: violation
   - id: DoNotUseThreads
     concept: raw_thread
     axis: quality
     scope: method
-    priority: medium
+    priority: high
     kind: violation
   - id: InsufficientStringBufferDeclaration
     concept: buffer_size
     axis: quality
     scope: method
-    priority: medium
+    priority: low
     kind: violation
   - id: AppendCharacterWithChar
     concept: append_char

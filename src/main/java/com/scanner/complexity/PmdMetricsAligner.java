@@ -19,7 +19,11 @@ import java.math.BigInteger;
 /** PMD ayrıştırma oturumu ve tavanlı NPath. Skor {@link HealthScoreEngine} tarafındadır. */
 final class PmdMetricsAligner {
 
-    static final int NPATH_CAP = 2_000_000_000;
+    /**
+     * Yazılan en yüksek yol sayısı. 12 art arda if 4096 yoldur, bu tavanın altında gerçek sayı yazılır.
+     * Skor bundan önce, katalog tavanı 20'de dolar.
+     */
+    static final int NPATH_CAP = 10000;
 
     private PmdMetricsAligner() {
     }
@@ -40,9 +44,9 @@ final class PmdMetricsAligner {
     }
 
     /**
-     * Dallanma 15 ve üstünde sayım yok, 2e9 yazılır.
-     * Altında PMD'nin kontrol akış sayacı yürür; yol sayısı skor tavanına varınca durur.
-     * Tavanın altı PMD ile aynı sayıdır. Tavan ve üstü bu kuralda zaten 0 puandır.
+     * Dallanma 30 ve üstünde sayım yok, sayım tavanı yazılır.
+     * Altında PMD'nin kontrol akış sayacı yürür; yol sayısı tavana varınca durur.
+     * Tavanın altı gerçek yoldur. Skor 20 yolda dolar, sayım tavanı puanı değiştirmez.
      */
     static int safeNpath(ASTExecutableDeclaration exec, int cyclo) {
         if (PmdHeavyMetricGuard.skipExplosiveMetrics(cyclo)) {
