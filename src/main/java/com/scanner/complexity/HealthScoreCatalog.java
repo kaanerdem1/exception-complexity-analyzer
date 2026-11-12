@@ -74,7 +74,7 @@ public final class HealthScoreCatalog {
             if (in == null) {
                 throw new IllegalStateException("health-score-catalog.yaml bulunamadı");
             }
-            return parse(new String(in.readAllBytes()));
+            return parse(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -82,7 +82,7 @@ public final class HealthScoreCatalog {
 
     @SuppressWarnings("unchecked")
     public static HealthScoreCatalog parse(String yaml) {
-        Map<String, Object> root = new Yaml().load(new StringReader(yaml));
+        Map<String, Object> root = new Yaml().load(new StringReader(repairPlainKeys(yaml)));
         Map<String, Integer> priorityWeights = new LinkedHashMap<>();
         Object pw = root.get("priority_weights");
         if (pw instanceof Map<?, ?> map) {
@@ -193,6 +193,14 @@ public final class HealthScoreCatalog {
             }
         }
         return out;
+    }
+
+    /** `scale:log` iki noktadan sonra boşluksuz yazılırsa YAML anahtarı sanır ve katalog açılmaz. */
+    private static String repairPlainKeys(String yaml) {
+        if (yaml == null || yaml.isEmpty()) {
+            return yaml;
+        }
+        return yaml.replace("scale:log", "scale: \"log\"").replace("scale:\"log\"", "scale: \"log\"");
     }
 
     private static int asInt(Object value, int fallback) {

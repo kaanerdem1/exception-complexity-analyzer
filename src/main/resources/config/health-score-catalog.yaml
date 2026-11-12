@@ -62,7 +62,7 @@ rules:
     kind: metric
     signal: npathComplexity
     metric_max: 10000
-    scale: log
+    scale: "log"
   - id: NcssCount
     concept: length
     axis: complexity

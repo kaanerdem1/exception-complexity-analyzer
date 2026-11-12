@@ -462,14 +462,28 @@ public final class PmdNativeProjectScanner {
             }
             out.append(cursor.getClass().getSimpleName());
             String msg = cursor.getMessage();
-            if (msg != null && !msg.isBlank()) {
-                out.append(": ").append(msg);
+            String shown = firstLine(msg);
+            if (!shown.isEmpty()) {
+                out.append(": ").append(shown);
             }
             Throwable next = cursor.getCause();
+            if (next != null && next != cursor && msg != null && next.getMessage() != null
+                    && msg.contains(firstLine(next.getMessage()))) {
+                break;
+            }
             cursor = next == cursor ? null : next;
             depth++;
         }
         return out.toString();
+    }
+
+    private static String firstLine(String msg) {
+        if (msg == null || msg.isBlank()) {
+            return "";
+        }
+        int line = msg.indexOf('\n');
+        String first = (line < 0 ? msg : msg.substring(0, line)).trim();
+        return first.length() > 160 ? first.substring(0, 160) : first;
     }
 
     private static final class PmdCacheRunCounters {

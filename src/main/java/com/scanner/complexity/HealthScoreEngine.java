@@ -39,8 +39,7 @@ public final class HealthScoreEngine {
                 try {
                     DEFAULT = new HealthScoreEngine(HealthScoreCatalog.loadDefault());
                 } catch (Throwable failure) {
-                    throw new IllegalStateException(
-                            "Skor kataloğu açılamadı (health-score-catalog.yaml): " + rootText(failure), failure);
+                    throw new IllegalStateException("Skor kataloğu açılamadı. " + rootText(failure));
                 }
             }
             return DEFAULT;
@@ -54,9 +53,14 @@ public final class HealthScoreEngine {
         }
         String msg = cursor.getMessage();
         if (msg == null || msg.isBlank()) {
-            return cursor.getClass().getName();
+            return cursor.getClass().getSimpleName();
         }
-        return cursor.getClass().getSimpleName() + ": " + msg;
+        int line = msg.indexOf('\n');
+        String first = (line < 0 ? msg : msg.substring(0, line)).trim();
+        if (first.length() > 160) {
+            first = first.substring(0, 160);
+        }
+        return first;
     }
 
     public HealthScoreCatalog catalog() {
