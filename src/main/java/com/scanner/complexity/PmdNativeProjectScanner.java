@@ -438,8 +438,9 @@ public final class PmdNativeProjectScanner {
 
     private static String metricsFailureDetail(Throwable t) {
         if (t instanceof StackOverflowError) {
-            return "Yığın taştı (stack overflow): dosyanın sözdizimi ağacı kurulamadı, metotlar ayrılamadı. "
-                    + "Tek metodun taşması dosyayı düşürmez. Bu dosya atlandı, diğer dosyalar taranmaya devam eder.";
+            return "Yığın taştı (stack overflow): dosya ölçümü geniş yığında da bitmedi. "
+                    + "16MB, 32MB, 64MB ve 128MB denendi. Tek metodun taşması dosyayı düşürmez; "
+                    + "bu kayıt ağacın kendisi kurulamadığı içindir.";
         }
         if (t instanceof OutOfMemoryError) {
             return "Bellek yetmedi (out of memory): bu dosya ölçülürken heap doldu. "

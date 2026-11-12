@@ -10,6 +10,8 @@ final class DeepStack {
     /** Derin servis sınıfları varsayılan 512KB–1MB yığına sığmıyor. */
     static final long STANDARD = 16L << 20;
     static final long TALL = 32L << 20;
+    /** Dosya ağacı kurulurken sırayla denenen yığınlar. 32MB Collateral servislerinde yetmedi. */
+    static final long[] FILE_ATTEMPTS = {STANDARD, TALL, 64L << 20, 128L << 20};
 
     @FunctionalInterface
     interface Task<T> {

@@ -53,35 +53,22 @@ final class PmdFileMetricsBuilder {
                             boolean attachDuplicateHashes, Map<String, MethodMetric> previousMethods,
                             String fileHash, List<FileError> methodLevelErrors) {
         return PmdMetricsAligner.withParseSession(languageLevel, session -> {
-            try {
-                ASTCompilationUnit unit = parseTree(session, sourceText, relativePath);
-                return buildFromUnit(relativePath, sourceText, unit, fileViolations, riskCalculator,
-                        attachDuplicateHashes, previousMethods, fileHash, methodLevelErrors);
-            } catch (RuntimeException e) {
-                throw e;
-            } catch (Exception e) {
-                throw new RuntimeException(relativePath + ": " + e.getMessage(), e);
+            VirtualMachineError last = null;
+            for (long stack : DeepStack.FILE_ATTEMPTS) {
+                try {
+                    return DeepStack.call(stack, () -> {
+                        ASTCompilationUnit unit = session.parse(sourceText, relativePath);
+                        return buildFromUnit(relativePath, sourceText, unit, fileViolations, riskCalculator,
+                                attachDuplicateHashes, previousMethods, fileHash, methodLevelErrors);
+                    });
+                } catch (VirtualMachineError overflow) {
+                    last = overflow;
+                }
             }
+            throw new RuntimeException(relativePath
+                    + ": sözdizimi ağacı kurulamadı, metotlar ayrılamadı. Yığın 16MB, 32MB, 64MB ve 128MB denendi.",
+                    last);
         });
-    }
-
-    /**
-     * Ağaç kurulamazsa metotlar ayrılamaz. Önce 16MB, yetmezse 32MB yığın denenir.
-     * Metot içindeki taşma buraya çıkmaz; o metot ayrıca ölçülür.
-     */
-    private static ASTCompilationUnit parseTree(PmdMetricsAligner.PmdParseSession session, String sourceText,
-                                                 String relativePath) throws Exception {
-        try {
-            return DeepStack.call(DeepStack.STANDARD, () -> session.parse(sourceText, relativePath));
-        } catch (VirtualMachineError first) {
-            try {
-                return DeepStack.call(DeepStack.TALL, () -> session.parse(sourceText, relativePath));
-            } catch (VirtualMachineError second) {
-                throw new RuntimeException(relativePath
-                        + ": sözdizimi ağacı kurulamadı, metotlar ayrılamadı. Yığın 16MB ve 32MB denendi.",
-                        second);
-            }
-        }
     }
 
     private static FileMetric buildFromUnit(String relativePath, String sourceText, ASTCompilationUnit unit,
