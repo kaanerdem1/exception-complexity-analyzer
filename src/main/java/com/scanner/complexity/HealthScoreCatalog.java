@@ -37,7 +37,8 @@ public final class HealthScoreCatalog {
             int metricMax,
             boolean skipOnRecord,
             List<String> aliases,
-            int penalty) {
+            int penalty,
+            boolean logScale) {
     }
 
     private final String version;
@@ -147,7 +148,8 @@ public final class HealthScoreCatalog {
                 asInt(map.get("metric_max"), 1),
                 Boolean.TRUE.equals(map.get("skip_on_record")),
                 List.copyOf(aliases),
-                Math.min(100, penalty));
+                Math.min(100, penalty),
+                "log".equalsIgnoreCase(stringOr(map.get("scale"), "")));
     }
 
     public String version() {

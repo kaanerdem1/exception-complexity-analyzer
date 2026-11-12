@@ -403,32 +403,22 @@ final class PmdFileMetricsBuilder {
 
     private static String npathFactor(int cyclo, int npath) {
         int countCap = BoundedNPath.scoreLimit();
-        int scoreMax = npathScoreMax();
         String how = " Metot 1 yolla başlar. Art arda if, döngü, && ve || yolları çarpar;"
                 + " if-else ile switch kolları toplar. Satır sayısı değildir.";
+        String scale = " Puan logaritmiktir: 1 yol 0, " + countCap + " yol NPath payının tamamı.";
         if (PmdHeavyMetricGuard.skipExplosiveMetrics(cyclo)) {
             return "npath: dallanma " + cyclo + " (>= " + PmdHeavyMetricGuard.CYCLO_HEAVY
                     + "), sayım yapılmadı, tavan " + countCap
-                    + " yazıldı. Bu " + countCap + " gerçek yol sayısı değildir."
-                    + " Skor tavanı " + scoreMax + ", bu kural 0 puan.";
+                    + " yazıldı. Bu " + countCap + " gerçek yol sayısı değildir; NPath payının tamamı riske eklendi.";
         }
         if (npath >= countCap) {
             return "npath: yol sayısı sayım tavanı " + countCap
                     + " değerine vardı, sayım durdu." + how
-                    + " " + countCap + " gerçek yol değil, durulan tavandır. Skor tavanı " + scoreMax
-                    + ", bu kural 0 puan. Daha büyük bir yol sayısı da aynı puanı verir.";
+                    + " " + countCap + " gerçek yol değil, durulan tavandır; NPath payının tamamı riske eklendi.";
         }
-        if (npath >= scoreMax) {
-            return "npath: ölçülen yol sayısı " + npath + "." + how
-                    + " " + npath + " sayım tavanı " + countCap + " altında olduğu için gerçek yoldur, yuvarlama değildir."
-                    + " Skor tavanı " + scoreMax + ", bu kural 0 puan. Sayım " + countCap + " değerine kadar sürer.";
-        }
-        return "npath: ölçülen yol sayısı " + npath + "." + how
-                + " Skor tavanı " + scoreMax + " altı, tam sayı.";
-    }
-
-    private static int npathScoreMax() {
-        return metricMax("NPathComplexity", 20);
+        int percent = (int) Math.round(Math.log(Math.max(1, npath)) / Math.log(countCap) * 100);
+        return "npath: ölçülen yol sayısı " + npath + ", gerçek yoldur." + how + scale
+                + " " + npath + " yol payın yüzde " + percent + "'i.";
     }
 
     private static int metricMax(String ruleId, int fallback) {

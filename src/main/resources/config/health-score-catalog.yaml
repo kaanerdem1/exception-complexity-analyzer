@@ -5,7 +5,8 @@
 # servis metotlarında hemen doluyordu; döngüsel 17 ile 52 aynı riski veriyordu.
 # Yeni tavanlar: döngüsel 40, bilişsel 60, satır 120. İç içe geçme 10, parametre 7.
 # NPath sayım tavanı 10000. 12 art arda if 4096 yoldur ve gerçek sayı yazılır. 10000'e varınca durur.
-# Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. Skor tavanı 20'dir; 20 ile 10000 aynı riski verir.
+# Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. NPath puanı logaritmiktir, tavan 10000:
+# 1 yol 0 risk, 20 yol payın yüzde 33'ü, 298 yol yüzde 62'si, 10000 yol tamamı.
 # Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
 # Kalitede düşük öncelik kuralları birlikte en fazla 24 puan düşürür; tek başına kaliteyi 0 yapmaz.
 
@@ -60,7 +61,8 @@ rules:
     priority: critical
     kind: metric
     signal: npathComplexity
-    metric_max: 20
+    metric_max: 10000
+    scale: log
   - id: NcssCount
     concept: length
     axis: complexity

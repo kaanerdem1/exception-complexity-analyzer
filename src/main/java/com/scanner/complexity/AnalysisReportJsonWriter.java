@@ -308,10 +308,11 @@ public final class AnalysisReportJsonWriter {
                 + "Skor tavanı " + cycloMax + ".");
         w.name("npathComplexity").value("Yürütme yolu sayısıdır, satır sayısı değildir. 1'den başlar. "
                 + "Art arda if, döngü, && ve || yolları çarpar; if-else ile switch kolları toplar. "
-                + "12 art arda if 4096 yoldur ve öyle yazılır. Sayım 10000'de durur. Skor 20'de dolar, "
-                + "ondan sonraki yol riski artırmaz.");
+                + "12 art arda if 4096 yoldur ve öyle yazılır. Sayım 10000'de durur. Puan logaritmiktir: "
+                + "1 yol 0, 20 yol payın yüzde 33'ü, 298 yol yüzde 62'si, 10000 yol tamamı.");
         w.name("npathCapped").value("true ise yazılan yol sayısı tavan 10000. Sayım 10000'de durdu "
-                + "ya da dallanma 30 ve üstü olduğu için sayılmadı. 10000 gerçek yol sayısı değildir. Bu kural 0 puan.");
+                + "ya da dallanma 30 ve üstü olduğu için sayılmadı. 10000 gerçek yol sayısı değildir. "
+                + "NPath payının tamamı riske eklenir.");
         w.endObject();
     }
 

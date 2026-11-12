@@ -10,7 +10,7 @@ import java.util.Map;
 /** Shared {@link AnalyzerState} load/save and cache identity (parser + PMD-native). */
 final class IncrementalStateSupport {
 
-    static final int CACHE_SCHEMA_VERSION = 12;
+    static final int CACHE_SCHEMA_VERSION = 13;
 
     private IncrementalStateSupport() {
     }

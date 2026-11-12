@@ -423,6 +423,10 @@ public final class HealthScoreEngine {
         if (rule.kind() == Kind.METRIC) {
             int value = signal(signals, rule.signal());
             int max = Math.max(1, rule.metricMax());
+            if (rule.logScale() && max > 1) {
+                double share = Math.log(Math.max(1, value)) / Math.log(max);
+                return Math.max(0, 100.0 - Math.min(1, share) * 100.0);
+            }
             return Math.max(0, 100.0 - (value / (double) max) * 100.0);
         }
         if (hits <= 0) {
