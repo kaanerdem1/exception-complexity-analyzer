@@ -301,9 +301,11 @@ public final class AnalysisReportJsonWriter {
                 + "modül ve proje = sınıf skorunun satır ağırlıklı ortalaması.");
         w.name("omittedMethods").value("trivial get/set/is ve karmaşıklığı " + methodRiskMinScore
                 + " altındaki metotlar files içine yazılmaz. summary.methodCount onları da sayar.");
+        HealthScoreCatalog.Rule cycloRule = HealthScoreEngine.get().catalog().find("CyclomaticComplexity");
+        int cycloMax = cycloRule == null || cycloRule.metricMax() < 1 ? 40 : cycloRule.metricMax();
         w.name("cyclomaticComplexity").value("1 metoda giriştir. Her if, for, while, do, foreach, catch, throw, "
                 + "switch case, &&, || ve üçlü ifade +1. 14 demek 13 karar noktası demektir. İç içe derinlik değildir. "
-                + "Skor tavanı 17.");
+                + "Skor tavanı " + cycloMax + ".");
         w.name("npathComplexity").value("Yürütme yolu sayısıdır, satır sayısı değildir. 1'den başlar. "
                 + "Art arda if, döngü, && ve || yolları çarpar; if-else ile switch kolları toplar. "
                 + "12 art arda if 4096 yoldur ve öyle yazılır. Sayım 10000'de durur. Skor 20'de dolar, "

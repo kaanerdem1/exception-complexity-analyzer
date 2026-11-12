@@ -1,12 +1,13 @@
 # Kod sağlığı motoru. Karmaşıklık ve kalite ayrıdır; tek skora indirgenmez.
 # Ham kural skoru yüksek = temiz. Rapordaki karmaşıklık = 100 - ham. Kalite = ham.
 # Ağırlıklar öncelik varsayılanıdır (kritik 10, yüksek 6, orta 3, düşük 1); weight ile ezilir.
-# Ölçüm tavanı (bu değerde kural skoru 0) Apache Commons Lang src/main/java ile kalibre edildi:
-# 264 dosya, 3520 metot, 2026-11-09. CC 17, cognitive 21, satır 36 aynı koşunun p99'u.
-# p90 (5 / 5 / 10 / 4) ruleset'in ihlal çizgisinin altında kalıyordu; skor sıfır, ihlal henüz yok olurdu.
+# Skor tavanı bu değerde kuralın risk payı dolar. Commons Lang p99 (CC 17, cognitive 21, satır 36)
+# servis metotlarında hemen doluyordu; döngüsel 17 ile 52 aynı riski veriyordu.
+# Yeni tavanlar: döngüsel 40, bilişsel 60, satır 120. İç içe geçme 10, parametre 7.
 # NPath sayım tavanı 10000. 12 art arda if 4096 yoldur ve gerçek sayı yazılır. 10000'e varınca durur.
 # Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. Skor tavanı 20'dir; 20 ile 10000 aynı riski verir.
-# İç içe geçme skor tavanı 10. Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
+# Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
+# Kalitede düşük öncelik kuralları birlikte en fazla 24 puan düşürür; tek başına kaliteyi 0 yapmaz.
 
 version: health-v1
 priority_weights:
@@ -41,7 +42,7 @@ rules:
     weight: 14
     kind: metric
     signal: cyclomaticComplexity
-    metric_max: 17
+    metric_max: 40
     aliases: [CyclomaticComplexMethod, cyclomatic_complexity]
   - id: CognitiveComplexity
     concept: cognitive
@@ -51,7 +52,7 @@ rules:
     weight: 14
     kind: metric
     signal: cognitiveComplexity
-    metric_max: 21
+    metric_max: 60
   - id: NPathComplexity
     concept: npath
     axis: complexity
@@ -67,7 +68,7 @@ rules:
     priority: critical
     kind: metric
     signal: ncssCount
-    metric_max: 36
+    metric_max: 120
     aliases: [LongMethod, function_body_length]
   - id: ExcessiveParameterList
     concept: parameters

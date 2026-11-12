@@ -88,8 +88,8 @@ public final class HealthScoreEngine {
                     List.of("excludedFromHealthScore=true"));
         }
         List<String> notes = new ArrayList<>();
-        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes);
-        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes);
+        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true);
+        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true);
         double complexity = invert(complexityRaw);
         return new MethodScore(complexity, complexityBand(complexity), complexityLevel(complexity),
                 round(qualityRaw), qualityBand(qualityRaw), List.copyOf(notes));
@@ -114,8 +114,8 @@ public final class HealthScoreEngine {
         double methodComplexity = weightSum == 0 ? 0 : complexityWeighted / weightSum;
         double methodQuality = weightSum == 0 ? 100 : qualityWeighted / weightSum;
         List<String> notes = new ArrayList<>();
-        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes);
-        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes);
+        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false);
+        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false);
         double classComplexity = invert(classComplexityRaw);
         double classQuality = classQualityRaw;
         int w1 = catalog.w1();
@@ -169,8 +169,8 @@ public final class HealthScoreEngine {
                 thresholds.put(rule.id(), List.of(rule.metricMax()));
             }
         }
-        String formula = "karmaşıklık = 100 - ağırlıklı kural puanı; "
-                + "kalite = 100 - ihlal düşüşü (kritik 40, yüksek 24, orta 16, düşük 12); "
+        String formula = "karmaşıklık = risk kalemlerinin toplamı; "
+                + "kalite = 100 - düşüş (kritik 40, yüksek 24, orta 16, düşük kurallar birlikte en fazla 24); "
                 + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
                 + " w2=" + catalog.w2()
                 + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
@@ -228,8 +228,11 @@ public final class HealthScoreEngine {
         return modules;
     }
 
+    /** Düşük öncelik kalite kuralları birlikte bundan fazla düşürmez. */
+    private static final double LOW_QUALITY_CAP = 24;
+
     private double average(Axis axis, Scope scope, Signals signals, List<Hit> hits, boolean recordType,
-                           Set<String> omittedSignals, List<String> notes) {
+                           Set<String> omittedSignals, List<String> notes, boolean explainTotal) {
         List<Rule> rules = catalog.rules(axis, scope);
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Boolean> sealedOnly = new LinkedHashMap<>();
@@ -245,7 +248,7 @@ public final class HealthScoreEngine {
             }
         }
         if (axis == Axis.QUALITY) {
-            return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes);
+            return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes, explainTotal);
         }
         double weightSum = 0;
         for (Rule rule : rules) {
@@ -254,39 +257,42 @@ public final class HealthScoreEngine {
             }
             weightSum += weightOf(rule, sealedOnly);
         }
-        if (weightSum <= 0) {
-            return 100;
+        List<PointLine> parts = new ArrayList<>();
+        if (weightSum > 0) {
+            for (Rule rule : rules) {
+                if (omittedMetric(rule, omittedSignals)) {
+                    notes.add(rule.id() + " ölçülemedi, bu parametre atlandı");
+                    continue;
+                }
+                int weight = weightOf(rule, sealedOnly);
+                if (recordType && rule.skipOnRecord()) {
+                    continue;
+                }
+                int hitsForRule = counts.getOrDefault(rule.id(), 0);
+                double sub = ruleScore(rule, signals, hitsForRule);
+                double risk = (weight / weightSum) * (100.0 - sub);
+                if (risk <= 0) {
+                    continue;
+                }
+                parts.add(new PointLine(scoreNote(rule, signals, hitsForRule), risk));
+            }
         }
-        double acc = 0;
-        for (Rule rule : rules) {
-            if (omittedMetric(rule, omittedSignals)) {
-                notes.add(rule.id() + " ölçülemedi, bu parametre atlandı");
-                continue;
-            }
-            int weight = weightOf(rule, sealedOnly);
-            if (recordType && rule.skipOnRecord()) {
-                acc += (weight / weightSum) * 100;
-                continue;
-            }
-            int hitsForRule = counts.getOrDefault(rule.id(), 0);
-            double sub = ruleScore(rule, signals, hitsForRule);
-            acc += (weight / weightSum) * sub;
-            if (sub < 80) {
-                notes.add(scoreNote(rule, signals, hitsForRule, sub));
-            }
+        double reported = writeBalanced(parts, notes, " risk+", true);
+        if (explainTotal) {
+            notes.add("karmaşıklık " + reported + " = risk kalemlerinin toplamı");
         }
-        return acc;
+        return 100.0 - reported;
     }
 
     /**
      * Kalite 100'den başlar. İhlal edilen kural, önceliğine göre doğrudan düşürür.
-     * İhlalsiz kurallar paydaya girmez; yoksa skor 80'lerin üstünde yapışır.
-     * Kritik tam ihlal 40, yüksek 24, orta 16, düşük 12 puan düşürür.
+     * Kritik tam ihlal 40, yüksek 24, orta 16, düşük 12. Düşük öncelikliler birlikte en fazla 24 düşer.
      */
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
-                                    Set<String> omittedSignals, List<String> notes) {
-        double deduction = 0;
+                                    Set<String> omittedSignals, List<String> notes, boolean explainTotal) {
+        List<PointLine> strong = new ArrayList<>();
+        List<PointLine> low = new ArrayList<>();
         for (Rule rule : rules) {
             if (omittedMetric(rule, omittedSignals)) {
                 notes.add(rule.id() + " ölçülemedi, bu parametre atlandı");
@@ -302,22 +308,78 @@ public final class HealthScoreEngine {
             }
             int weight = weightOf(rule, sealedOnly);
             double slice = qualitySlice(weight);
-            deduction += ((100.0 - sub) / 100.0) * slice;
-            if (sub < 80) {
-                notes.add(scoreNote(rule, signals, hitsForRule, sub));
+            double drop = ((100.0 - sub) / 100.0) * slice;
+            PointLine line = new PointLine(scoreNote(rule, signals, hitsForRule), drop);
+            if (slice <= 12) {
+                low.add(line);
+            } else {
+                strong.add(line);
             }
         }
-        return Math.max(0, 100.0 - deduction);
+        double lowSum = 0;
+        for (PointLine line : low) {
+            lowSum += line.exact;
+        }
+        boolean capped = lowSum > LOW_QUALITY_CAP;
+        List<PointLine> all = new ArrayList<>(strong);
+        if (!capped) {
+            all.addAll(low);
+        } else if (lowSum > 0) {
+            double scale = LOW_QUALITY_CAP / lowSum;
+            for (PointLine line : low) {
+                all.add(new PointLine(line.text, line.exact * scale));
+            }
+        }
+        double deduction = writeBalanced(all, notes, " düşüş=", false);
+        if (capped) {
+            notes.add("düşük öncelik kuralları ham düşüş " + round(lowSum)
+                    + ", tavan " + (int) LOW_QUALITY_CAP + " uygulandı");
+        }
+        double quality = deduction >= 100 ? 0 : round(100.0 - deduction);
+        if (explainTotal) {
+            if (deduction >= 100) {
+                notes.add("kalite 0 = 100 - " + deduction + ", taban 0");
+            } else {
+                notes.add("kalite " + quality + " = 100 - " + deduction);
+            }
+        }
+        return quality;
     }
 
-    private String scoreNote(Rule rule, Signals signals, int hitsForRule, double sub) {
-        String note = rule.concept() + " " + rule.id() + " sub=" + round(sub);
+    /** Satırları 3 ondalığa yuvarlar; son satır toplamı tutturur. */
+    private static double writeBalanced(List<PointLine> parts, List<String> notes, String label, boolean capAt100) {
+        double exact = 0;
+        for (PointLine part : parts) {
+            exact += part.exact;
+        }
+        double reported = round(exact);
+        if (capAt100) {
+            reported = Math.min(100, reported);
+        }
+        double acc = 0;
+        for (int i = 0; i < parts.size(); i++) {
+            double shown = i == parts.size() - 1 ? round(reported - acc) : round(parts.get(i).exact);
+            if (i < parts.size() - 1) {
+                acc = round(acc + shown);
+            }
+            if (shown > 0) {
+                notes.add(parts.get(i).text + label + shown);
+            }
+        }
+        return reported;
+    }
+
+    private String scoreNote(Rule rule, Signals signals, int hitsForRule) {
+        String note = rule.concept() + " " + rule.id();
         if (rule.kind() == Kind.METRIC) {
             note += " sayım=" + signal(signals, rule.signal()) + " tavan=" + rule.metricMax();
-        } else if (hitsForRule > 0 && rule.penalty() < 100) {
+        } else if (hitsForRule > 0) {
             note += " adet=" + hitsForRule;
         }
         return note;
+    }
+
+    private record PointLine(String text, double exact) {
     }
 
     private static double qualitySlice(int weight) {
