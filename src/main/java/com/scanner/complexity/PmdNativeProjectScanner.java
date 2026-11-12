@@ -453,11 +453,23 @@ public final class PmdNativeProjectScanner {
         if (t == null) {
             return "unknown";
         }
-        String msg = t.getMessage();
-        if (msg != null && !msg.isBlank()) {
-            return t.getClass().getSimpleName() + ": " + msg;
+        StringBuilder out = new StringBuilder();
+        Throwable cursor = t;
+        int depth = 0;
+        while (cursor != null && depth < 6) {
+            if (depth > 0) {
+                out.append(" | neden: ");
+            }
+            out.append(cursor.getClass().getSimpleName());
+            String msg = cursor.getMessage();
+            if (msg != null && !msg.isBlank()) {
+                out.append(": ").append(msg);
+            }
+            Throwable next = cursor.getCause();
+            cursor = next == cursor ? null : next;
+            depth++;
         }
-        return t.getClass().getSimpleName();
+        return out.toString();
     }
 
     private static final class PmdCacheRunCounters {

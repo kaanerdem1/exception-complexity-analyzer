@@ -21,7 +21,7 @@ import java.util.function.Function;
  */
 public final class HealthScoreEngine {
 
-    private static final HealthScoreEngine DEFAULT = new HealthScoreEngine(HealthScoreCatalog.loadDefault());
+    private static volatile HealthScoreEngine DEFAULT;
 
     private final HealthScoreCatalog catalog;
 
@@ -30,7 +30,33 @@ public final class HealthScoreEngine {
     }
 
     public static HealthScoreEngine get() {
-        return DEFAULT;
+        HealthScoreEngine current = DEFAULT;
+        if (current != null) {
+            return current;
+        }
+        synchronized (HealthScoreEngine.class) {
+            if (DEFAULT == null) {
+                try {
+                    DEFAULT = new HealthScoreEngine(HealthScoreCatalog.loadDefault());
+                } catch (Throwable failure) {
+                    throw new IllegalStateException(
+                            "Skor kataloğu açılamadı (health-score-catalog.yaml): " + rootText(failure), failure);
+                }
+            }
+            return DEFAULT;
+        }
+    }
+
+    private static String rootText(Throwable failure) {
+        Throwable cursor = failure;
+        while (cursor.getCause() != null && cursor.getCause() != cursor) {
+            cursor = cursor.getCause();
+        }
+        String msg = cursor.getMessage();
+        if (msg == null || msg.isBlank()) {
+            return cursor.getClass().getName();
+        }
+        return cursor.getClass().getSimpleName() + ": " + msg;
     }
 
     public HealthScoreCatalog catalog() {
