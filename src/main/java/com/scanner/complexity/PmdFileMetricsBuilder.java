@@ -398,7 +398,7 @@ final class PmdFileMetricsBuilder {
         int decisions = Math.max(0, cyclo - 1);
         return "döngüsel karmaşıklık " + cyclo + ": 1 metoda giriştir, kalan " + decisions
                 + " her if, for, while, do, foreach, catch, throw, switch case, &&, || ve üçlü ifadeden bir kez sayılır."
-                + " İç içe derinlik değildir. Skor tavanı " + metricMax("CyclomaticComplexity", 17) + ".";
+                + " İç içe derinlik değildir. " + metricCeilingText("CyclomaticComplexity", 17);
     }
 
     private static String npathFactor(int cyclo, int npath) {
@@ -421,12 +421,14 @@ final class PmdFileMetricsBuilder {
                 + " " + npath + " yol payın yüzde " + percent + "'i.";
     }
 
-    private static int metricMax(String ruleId, int fallback) {
+    private static String metricCeilingText(String ruleId, int fallback) {
         HealthScoreCatalog.Rule rule = HealthScoreEngine.get().catalog().find(ruleId);
-        if (rule == null || rule.metricMax() < 1) {
-            return fallback;
+        int max = rule == null || rule.metricMax() < 1 ? fallback : rule.metricMax();
+        if (rule != null && rule.overflowMax() > max) {
+            return "Pay " + max + " değerinde dolar; " + rule.overflowMax()
+                    + " değerine kadar logaritmik artar.";
         }
-        return rule.metricMax();
+        return "Skor tavanı " + max + ".";
     }
 
     private static String analysisFailureDetail(Throwable t) {

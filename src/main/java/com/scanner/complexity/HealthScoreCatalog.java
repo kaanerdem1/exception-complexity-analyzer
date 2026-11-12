@@ -38,7 +38,8 @@ public final class HealthScoreCatalog {
             boolean skipOnRecord,
             List<String> aliases,
             int penalty,
-            boolean logScale) {
+            boolean logScale,
+            int overflowMax) {
     }
 
     private final String version;
@@ -149,7 +150,8 @@ public final class HealthScoreCatalog {
                 Boolean.TRUE.equals(map.get("skip_on_record")),
                 List.copyOf(aliases),
                 Math.min(100, penalty),
-                "log".equalsIgnoreCase(stringOr(map.get("scale"), "")));
+                "log".equalsIgnoreCase(stringOr(map.get("scale"), "")),
+                Math.max(0, asInt(map.get("overflow_max"), 0)));
     }
 
     public String version() {

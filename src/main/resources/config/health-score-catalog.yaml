@@ -1,14 +1,17 @@
 # Kod sağlığı motoru. Karmaşıklık ve kalite ayrıdır; tek skora indirgenmez.
 # Ham kural skoru yüksek = temiz. Rapordaki karmaşıklık = 100 - ham. Kalite = ham.
 # Ağırlıklar öncelik varsayılanıdır (kritik 10, yüksek 6, orta 3, düşük 1); weight ile ezilir.
-# Skor tavanı bu değerde kuralın risk payı dolar. Commons Lang p99 (CC 17, cognitive 21, satır 36)
-# servis metotlarında hemen doluyordu; döngüsel 17 ile 52 aynı riski veriyordu.
-# Yeni tavanlar: döngüsel 40, bilişsel 60, satır 120. İç içe geçme 10, parametre 7.
+# Skor tavanı bu değerde kuralın risk payı dolar. Sayım tavanı geçince pay logaritmik artar;
+# overflow_max değerinde bir pay daha dolar (en fazla iki pay). Böylece döngüsel 52 ile 109,
+# bilişsel 64 ile 424 aynı riske yapışmaz. Tavanın altındaki metotların puanı değişmez.
+# Tavanlar: döngüsel 40 (uç 200), bilişsel 60 (uç 1000), satır 120 (uç 500),
+# iç içe geçme 10 (uç 40), parametre 7 (uç 20).
 # NPath sayım tavanı 10000. 12 art arda if 4096 yoldur ve gerçek sayı yazılır. 10000'e varınca durur.
 # Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. NPath puanı logaritmiktir, tavan 10000:
 # 1 yol 0 risk, 20 yol payın yüzde 33'ü, 298 yol yüzde 62'si, 10000 yol tamamı.
 # Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
-# Kalitede düşük öncelik kuralları birlikte en fazla 24 puan düşürür; tek başına kaliteyi 0 yapmaz.
+# Kalitede düşük öncelik dilimi 20 puandır. Adet karekökle artar: 1 adet az düşer, 64 adet dilimi doldurur.
+# Düşük öncelik kuralları birlikte en fazla 60 puan düşürür.
 
 version: health-v1
 priority_weights:
@@ -44,6 +47,7 @@ rules:
     kind: metric
     signal: cyclomaticComplexity
     metric_max: 40
+    overflow_max: 200
     aliases: [CyclomaticComplexMethod, cyclomatic_complexity]
   - id: CognitiveComplexity
     concept: cognitive
@@ -54,6 +58,7 @@ rules:
     kind: metric
     signal: cognitiveComplexity
     metric_max: 60
+    overflow_max: 1000
   - id: NPathComplexity
     concept: npath
     axis: complexity
@@ -71,6 +76,7 @@ rules:
     kind: metric
     signal: ncssCount
     metric_max: 120
+    overflow_max: 500
     aliases: [LongMethod, function_body_length]
   - id: ExcessiveParameterList
     concept: parameters
@@ -80,6 +86,7 @@ rules:
     kind: metric
     signal: parameterCount
     metric_max: 7
+    overflow_max: 20
     aliases: [LongParameterList, function_parameter_count]
   - id: AvoidDeeplyNestedIfStmts
     concept: nesting
@@ -90,6 +97,7 @@ rules:
     kind: metric
     signal: maxNestingDepth
     metric_max: 10
+    overflow_max: 40
     aliases: [NestedBlockDepth, nesting]
   - id: EmptyCatchOnRisk
     concept: swallowed_exception

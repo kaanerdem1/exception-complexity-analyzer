@@ -199,8 +199,11 @@ public final class HealthScoreEngine {
                 thresholds.put(rule.id(), List.of(rule.metricMax()));
             }
         }
-        String formula = "karmaşıklık = risk kalemlerinin toplamı; "
-                + "kalite = 100 - düşüş (kritik 40, yüksek 24, orta 16, düşük kurallar birlikte en fazla 24); "
+        String formula = "karmaşıklık = risk kalemlerinin toplamı; tavanı aşan sayım logaritmik artar, "
+                + "uçta pay ikiye katlanır, toplam 100'de durur; "
+                + "kalite = 100 - düşüş (kritik 40, yüksek 24, orta 16, düşük 20; "
+                + "düşük adet karekökle artar, 64 adette dolar, birlikte en fazla 60; "
+                + "ikinci ihlalden sonra kritik ve yüksek dilimin yarısı kadar daha ekler); "
                 + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
                 + " w2=" + catalog.w2()
                 + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
@@ -259,7 +262,11 @@ public final class HealthScoreEngine {
     }
 
     /** Düşük öncelik kalite kuralları birlikte bundan fazla düşürmez. */
-    private static final double LOW_QUALITY_CAP = 24;
+    private static final double LOW_QUALITY_CAP = 60;
+    /** Bu kadar adet, düşük öncelik kuralının dilimini doldurur. Adet karekökle artar. */
+    private static final int LOW_QUALITY_FULL_HITS = 64;
+    /** İlk ihlalden sonraki adet bu kadar olunca kritik/yüksek dilimin yarısı daha eklenir. */
+    private static final int EXTRA_HITS_FULL = 15;
 
     private double average(Axis axis, Scope scope, Signals signals, List<Hit> hits, boolean recordType,
                            Set<String> omittedSignals, List<String> notes, boolean explainTotal) {
@@ -307,7 +314,23 @@ public final class HealthScoreEngine {
                 parts.add(new PointLine(scoreNote(rule, signals, hitsForRule), risk));
             }
         }
+        double raw = 0;
+        for (PointLine part : parts) {
+            raw += part.exact;
+        }
+        boolean capped = raw > 100;
+        if (capped) {
+            double scale = 100.0 / raw;
+            List<PointLine> scaled = new ArrayList<>();
+            for (PointLine part : parts) {
+                scaled.add(new PointLine(part.text, part.exact * scale));
+            }
+            parts = scaled;
+        }
         double reported = writeBalanced(parts, notes, " risk+", true);
+        if (capped) {
+            notes.add("risk kalemleri ham " + round(raw) + ", tavan 100 uygulandı");
+        }
         if (explainTotal) {
             notes.add("karmaşıklık " + reported + " = risk kalemlerinin toplamı");
         }
@@ -316,7 +339,9 @@ public final class HealthScoreEngine {
 
     /**
      * Kalite 100'den başlar. İhlal edilen kural, önceliğine göre doğrudan düşürür.
-     * Kritik tam ihlal 40, yüksek 24, orta 16, düşük 12. Düşük öncelikliler birlikte en fazla 24 düşer.
+     * Kritik tam ihlal 40, yüksek 24, orta 16, düşük 20. Düşük adet karekökle artar; 64 adet dilimi doldurur.
+     * Düşük öncelikliler birlikte en fazla 60 düşer. Kritik ve yüksekte ilk ihlal dilimi doldurur,
+     * sonrakiler dilimin yarısına kadar ekler.
      */
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
@@ -332,15 +357,26 @@ public final class HealthScoreEngine {
                 continue;
             }
             int hitsForRule = counts.getOrDefault(rule.id(), 0);
-            double sub = ruleScore(rule, signals, hitsForRule);
-            if (sub >= 100) {
-                continue;
-            }
             int weight = weightOf(rule, sealedOnly);
             double slice = qualitySlice(weight);
-            double drop = ((100.0 - sub) / 100.0) * slice;
+            boolean lowPriority = weight <= catalog.lowPriorityWeight();
+            double drop;
+            if (lowPriority && rule.kind() == Kind.VIOLATION && hitsForRule > 0 && rule.penalty() >= 100) {
+                double fill = Math.min(1.0, Math.sqrt(hitsForRule / (double) LOW_QUALITY_FULL_HITS));
+                drop = fill * slice;
+            } else {
+                double sub = ruleScore(rule, signals, hitsForRule);
+                if (sub >= 100) {
+                    continue;
+                }
+                drop = ((100.0 - sub) / 100.0) * slice;
+                if (hitsForRule > 1 && rule.penalty() >= 100) {
+                    double extra = Math.min(1.0, Math.sqrt((hitsForRule - 1) / (double) EXTRA_HITS_FULL));
+                    drop += slice * 0.5 * extra;
+                }
+            }
             PointLine line = new PointLine(scoreNote(rule, signals, hitsForRule), drop);
-            if (slice <= 12) {
+            if (lowPriority) {
                 low.add(line);
             } else {
                 strong.add(line);
@@ -402,7 +438,11 @@ public final class HealthScoreEngine {
     private String scoreNote(Rule rule, Signals signals, int hitsForRule) {
         String note = rule.concept() + " " + rule.id();
         if (rule.kind() == Kind.METRIC) {
-            note += " sayım=" + signal(signals, rule.signal()) + " tavan=" + rule.metricMax();
+            int value = signal(signals, rule.signal());
+            note += " sayım=" + value + " tavan=" + rule.metricMax();
+            if (rule.overflowMax() > rule.metricMax() && value > rule.metricMax()) {
+                note += ", " + rule.overflowMax() + "'e kadar artar";
+            }
         } else if (hitsForRule > 0) {
             note += " adet=" + hitsForRule;
         }
@@ -422,7 +462,7 @@ public final class HealthScoreEngine {
         if (weight >= 3) {
             return 16;
         }
-        return 12;
+        return 20;
     }
 
     private static boolean matchesHit(Rule rule, String ruleName) {
@@ -451,13 +491,22 @@ public final class HealthScoreEngine {
 
     private double ruleScore(Rule rule, Signals signals, int hits) {
         if (rule.kind() == Kind.METRIC) {
-            int value = signal(signals, rule.signal());
+            int value = Math.max(0, signal(signals, rule.signal()));
             int max = Math.max(1, rule.metricMax());
+            double base;
             if (rule.logScale() && max > 1) {
-                double share = Math.log(Math.max(1, value)) / Math.log(max);
-                return Math.max(0, 100.0 - Math.min(1, share) * 100.0);
+                base = Math.log(Math.max(1, value)) / Math.log(max);
+            } else {
+                base = value / (double) max;
             }
-            return Math.max(0, 100.0 - (value / (double) max) * 100.0);
+            base = Math.min(1, Math.max(0, base));
+            double extra = 0;
+            int far = rule.overflowMax();
+            if (!rule.logScale() && far > max && value > max) {
+                extra = Math.log(value / (double) max) / Math.log(far / (double) max);
+                extra = Math.min(1, Math.max(0, extra));
+            }
+            return 100.0 - (base + extra) * 100.0;
         }
         if (hits <= 0) {
             return 100;
