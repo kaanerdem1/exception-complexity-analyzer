@@ -201,9 +201,10 @@ public final class HealthScoreEngine {
         }
         String formula = "karmaşıklık = risk kalemlerinin toplamı; tavanı aşan sayım logaritmik artar, "
                 + "uçta pay ikiye katlanır, toplam 100'de durur; "
-                + "kalite = 100 - düşüş (kritik 40, yüksek 24, orta 16, düşük 20; "
+                + "kalite = 100 - düşüş (kritik 15, yüksek 10, orta 6, düşük 20; "
                 + "düşük adet karekökle artar, 64 adette dolar, birlikte en fazla 60; "
-                + "ikinci ihlalden sonra kritik ve yüksek dilimin yarısı kadar daha ekler); "
+                + "ham düşüş 60'a kadar birebir, sonrası yavaşlar ve 0'a yapışmaz; "
+                + "aynı kuralın tekrarı dilimin yarısına kadar ekler; boş catch adet başı 10, 4 adette 40); "
                 + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
                 + " w2=" + catalog.w2()
                 + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
@@ -263,6 +264,12 @@ public final class HealthScoreEngine {
 
     /** Düşük öncelik kalite kuralları birlikte bundan fazla düşürmez. */
     private static final double LOW_QUALITY_CAP = 60;
+    /**
+     * Ham düşüş bu değere kadar kaliteden birebir iner. Üstü yavaşlar ve 0'a yapışmaz.
+     * 60'ta kalite 40'tır. Kalan 40 puan, her 58 ham puanda yaklaşık 1/e oranında erir.
+     */
+    private static final double QUALITY_LINEAR_UNTIL = 60;
+    private static final double QUALITY_TAIL = 58;
     /** Bu kadar adet, düşük öncelik kuralının dilimini doldurur. Adet karekökle artar. */
     private static final int LOW_QUALITY_FULL_HITS = 64;
     /** İlk ihlalden sonraki adet bu kadar olunca kritik/yüksek dilimin yarısı daha eklenir. */
@@ -339,9 +346,12 @@ public final class HealthScoreEngine {
 
     /**
      * Kalite 100'den başlar. İhlal edilen kural, önceliğine göre doğrudan düşürür.
-     * Kritik tam ihlal 40, yüksek 24, orta 16, düşük 20. Düşük adet karekökle artar; 64 adet dilimi doldurur.
-     * Düşük öncelikliler birlikte en fazla 60 düşer. Kritik ve yüksekte ilk ihlal dilimi doldurur,
-     * sonrakiler dilimin yarısına kadar ekler.
+     * Kritik 15, yüksek 10, orta 6, düşük 20. Üç ayrı kritik kural kaliteyi 55'e indirir.
+     * Ham düşüş 60'a kadar birebir yazılır. 60'ın üstü yavaşlar: 7 kritik kural yaklaşık 18,
+     * 12 kritik kural yaklaşık 5 kalır. Düşük adet karekökle artar; 64 adet dilimi doldurur.
+     * Düşük öncelikliler birlikte en fazla 60 düşer.
+     * İlk ihlal dilimi doldurur, aynı kuralın tekrarı dilimin yarısına kadar ekler.
+     * Ceza puanı 100'ün altındaki kural (boş catch) dilimden bağımsızdır: her adet 10, 4 adette 40.
      */
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
@@ -369,10 +379,15 @@ public final class HealthScoreEngine {
                 if (sub >= 100) {
                     continue;
                 }
-                drop = ((100.0 - sub) / 100.0) * slice;
-                if (hitsForRule > 1 && rule.penalty() >= 100) {
-                    double extra = Math.min(1.0, Math.sqrt((hitsForRule - 1) / (double) EXTRA_HITS_FULL));
-                    drop += slice * 0.5 * extra;
+                double fraction = (100.0 - sub) / 100.0;
+                if (rule.penalty() < 100) {
+                    drop = fraction * 40.0;
+                } else {
+                    drop = fraction * slice;
+                    if (hitsForRule > 1) {
+                        double extra = Math.min(1.0, Math.sqrt((hitsForRule - 1) / (double) EXTRA_HITS_FULL));
+                        drop += slice * 0.5 * extra;
+                    }
                 }
             }
             PointLine line = new PointLine(scoreNote(rule, signals, hitsForRule), drop);
@@ -401,15 +416,26 @@ public final class HealthScoreEngine {
             notes.add("düşük öncelik kuralları ham düşüş " + round(lowSum)
                     + ", tavan " + (int) LOW_QUALITY_CAP + " uygulandı");
         }
-        double quality = deduction >= 100 ? 0 : round(100.0 - deduction);
+        double quality = softenQuality(deduction);
         if (explainTotal) {
-            if (deduction >= 100) {
-                notes.add("kalite 0 = 100 - " + deduction + ", taban 0");
-            } else {
+            if (deduction <= QUALITY_LINEAR_UNTIL) {
                 notes.add("kalite " + quality + " = 100 - " + deduction);
+            } else {
+                notes.add("ham düşüş " + deduction + ", " + (int) QUALITY_LINEAR_UNTIL
+                        + " üstü yavaşlar, kalite " + quality);
             }
         }
         return quality;
+    }
+
+    /** 60'a kadar birebir. Sonrası kalan puanı eritir, sıfıra yapıştırmaz. */
+    private static double softenQuality(double rawDeduction) {
+        if (rawDeduction <= QUALITY_LINEAR_UNTIL) {
+            return round(Math.max(0, 100.0 - rawDeduction));
+        }
+        double remaining = (100.0 - QUALITY_LINEAR_UNTIL)
+                * Math.exp(-(rawDeduction - QUALITY_LINEAR_UNTIL) / QUALITY_TAIL);
+        return round(remaining);
     }
 
     /** Satırları 3 ondalığa yuvarlar; son satır toplamı tutturur. */
@@ -454,13 +480,13 @@ public final class HealthScoreEngine {
 
     private static double qualitySlice(int weight) {
         if (weight >= 10) {
-            return 40;
+            return 15;
         }
         if (weight >= 6) {
-            return 24;
+            return 10;
         }
         if (weight >= 3) {
-            return 16;
+            return 6;
         }
         return 20;
     }

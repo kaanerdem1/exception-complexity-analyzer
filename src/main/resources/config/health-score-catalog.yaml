@@ -10,7 +10,10 @@
 # Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. NPath puanı logaritmiktir, tavan 10000:
 # 1 yol 0 risk, 20 yol payın yüzde 33'ü, 298 yol yüzde 62'si, 10000 yol tamamı.
 # Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
-# Kalitede düşük öncelik dilimi 20 puandır. Adet karekökle artar: 1 adet az düşer, 64 adet dilimi doldurur.
+# Kalitede kritik ilk ihlal 15, yüksek 10, orta 6. Üç ayrı kritik kural kaliteyi 55 yapar.
+# Ham düşüş 60'a kadar birebir iner. 60'ın üstü yavaşlar: 7 kritik kural yaklaşık 18, 12 kural yaklaşık 5.
+# Aynı kuralın tekrarı en fazla dilimin yarısı kadar ekler. Boş catch adet başı 10, 4 adette 40'ta durur.
+# Düşük öncelik dilimi 20 puandır. Adet karekökle artar: 1 adet az düşer, 64 adet dilimi doldurur.
 # Düşük öncelik kuralları birlikte en fazla 60 puan düşürür.
 
 version: health-v1
