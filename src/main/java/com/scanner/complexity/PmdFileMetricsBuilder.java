@@ -6,8 +6,10 @@ import com.scanner.complexity.AnalysisReport.FileError;
 import com.scanner.complexity.AnalysisReport.FileMetric;
 import com.scanner.complexity.AnalysisReport.PmdViolationRow;
 import com.scanner.complexity.RiskCalculator.Assessment;
+import net.sourceforge.pmd.lang.ast.Node;
 import net.sourceforge.pmd.lang.java.ast.ASTCompilationUnit;
 import net.sourceforge.pmd.lang.java.ast.ASTConstructorDeclaration;
+import net.sourceforge.pmd.lang.java.ast.ASTEnumConstant;
 import net.sourceforge.pmd.lang.java.ast.ASTExecutableDeclaration;
 import net.sourceforge.pmd.lang.java.ast.ASTFormalParameter;
 import net.sourceforge.pmd.lang.java.ast.ASTFormalParameters;
@@ -81,8 +83,8 @@ final class PmdFileMetricsBuilder {
         List<ClassMetric> classes = new ArrayList<>();
         Map<String, MethodMetric> previous = previousMethods == null ? Map.of() : previousMethods;
         for (ASTTypeDeclaration type : unit.getTypeDeclarations().toList()) {
-            classes.add(buildType(relativePath, type, sourceText, fileViolations, options, riskCalculator,
-                    attachDuplicateHashes, previous, methodLevelErrors));
+            addTypeAndNested(relativePath, type, typeLabel(type), sourceText, fileViolations, options,
+                    riskCalculator, attachDuplicateHashes, previous, methodLevelErrors, classes);
         }
         List<MethodMetric> allMethods = classes.stream().flatMap(c -> c.methods().stream()).toList();
         int wmc = allMethods.stream().mapToInt(MethodMetric::cyclomaticComplexity).sum();
@@ -107,14 +109,70 @@ final class PmdFileMetricsBuilder {
                 fileScore.quality());
     }
 
-    private static ClassMetric buildType(String relativePath, ASTTypeDeclaration type, String sourceText,
+    /** Üye, yerel ve anonim sınıflar kendi satırını alır. İsim Outer.Inner biçimindedir. */
+    private static void addTypeAndNested(String relativePath, ASTTypeDeclaration type, String qualifiedName,
+                                         String sourceText, List<PmdViolationRow> fileViolations,
+                                         MetricOptions options, RiskCalculator riskCalculator,
+                                         boolean attachDuplicateHashes, Map<String, MethodMetric> previousMethods,
+                                         List<FileError> methodLevelErrors, List<ClassMetric> classes) {
+        List<ASTTypeDeclaration> nested = directNestedTypes(type);
+        classes.add(buildType(relativePath, type, qualifiedName, nested, sourceText, fileViolations, options,
+                riskCalculator, attachDuplicateHashes, previousMethods, methodLevelErrors));
+        for (ASTTypeDeclaration child : nested) {
+            addTypeAndNested(relativePath, child, qualifiedName + "." + typeLabel(child), sourceText,
+                    fileViolations, options, riskCalculator, attachDuplicateHashes, previousMethods,
+                    methodLevelErrors, classes);
+        }
+    }
+
+    private static List<ASTTypeDeclaration> directNestedTypes(ASTTypeDeclaration type) {
+        List<ASTTypeDeclaration> children = new ArrayList<>();
+        for (ASTTypeDeclaration nested : type.descendants(ASTTypeDeclaration.class).toList()) {
+            if (enclosingType(nested) == type) {
+                children.add(nested);
+            }
+        }
+        return children;
+    }
+
+    private static ASTTypeDeclaration enclosingType(ASTTypeDeclaration nested) {
+        Node parent = nested.getParent();
+        while (parent != null) {
+            if (parent instanceof ASTTypeDeclaration type) {
+                return type;
+            }
+            parent = parent.getParent();
+        }
+        return null;
+    }
+
+    /** Anonim sınıfta satır, enum sabitinde sabit adı. */
+    private static String typeLabel(ASTTypeDeclaration type) {
+        if (!type.isAnonymous()) {
+            String name = type.getSimpleName();
+            if (name != null && !name.isBlank()) {
+                return name;
+            }
+        }
+        Node parent = type.getParent();
+        while (parent != null && !(parent instanceof ASTTypeDeclaration)) {
+            if (parent instanceof ASTEnumConstant constant && constant.getName() != null) {
+                return constant.getName();
+            }
+            parent = parent.getParent();
+        }
+        return "anon@" + type.getBeginLine();
+    }
+
+    private static ClassMetric buildType(String relativePath, ASTTypeDeclaration type, String qualifiedName,
+                                         List<ASTTypeDeclaration> nested, String sourceText,
                                          List<PmdViolationRow> fileViolations,
                                          MetricOptions options, RiskCalculator riskCalculator,
                                          boolean attachDuplicateHashes, Map<String, MethodMetric> previousMethods,
                                          List<FileError> methodLevelErrors) {
-        String simpleName = type.getSimpleName();
         java.util.LinkedHashMap<String, MethodMetric> methodsByLine = new java.util.LinkedHashMap<>();
-        String className = simpleName;
+        String className = qualifiedName;
+        List<PmdViolationRow> ownViolations = violationsOutsideNested(fileViolations, nested);
         for (ASTExecutableDeclaration exec : type.getOperations().toList()) {
             MethodMetric built = measureMethod(relativePath, exec, sourceText, fileViolations, options,
                     riskCalculator, attachDuplicateHashes, className, previousMethods, methodLevelErrors);
@@ -136,14 +194,38 @@ final class PmdFileMetricsBuilder {
                     method.codeLines(), method.riskScore(), method.qualityScore(), method.excludedFromHealthScore()));
         }
         HealthScoreEngine.ClassScore classScore = HealthScoreEngine.get().scoreClass(
-                inputs, hitsInRange(fileViolations, type.getBeginLine(), type.getEndLine()), record);
+                inputs, hitsInRange(ownViolations, type.getBeginLine(), type.getEndLine()), record);
         boolean godClass = methods.stream().anyMatch(MethodMetric::godMethod)
-                || fileViolations != null && fileViolations.stream()
+                || ownViolations != null && ownViolations.stream()
                 .anyMatch(v -> "GodClass".equals(v.ruleName()) && v.beginLine() >= type.getBeginLine()
                         && v.beginLine() <= type.getEndLine());
-        return new ClassMetric(simpleName, typeKind(type), type.getBeginLine(), type.getEndLine(), methods.size(), 0,
+        return new ClassMetric(qualifiedName, typeKind(type), type.getBeginLine(), type.getEndLine(), methods.size(), 0,
                 loc, 0, wmc, maxCc, avg, classScore.complexity(), classScore.complexityLevel(), classScore.notes(),
                 methods, HalsteadMetrics.EMPTY, List.of(), 0.0, godClass, 0, 0, 0, 0, 0, classScore.quality());
+    }
+
+    /** İç sınıfın satırındaki ihlal dış sınıfın sınıf skoruna ikinci kez binmez. */
+    private static List<PmdViolationRow> violationsOutsideNested(List<PmdViolationRow> violations,
+                                                                List<ASTTypeDeclaration> nested) {
+        if (violations == null || violations.isEmpty() || nested == null || nested.isEmpty()) {
+            return violations;
+        }
+        List<PmdViolationRow> own = new ArrayList<>();
+        for (PmdViolationRow row : violations) {
+            if (!insideNested(row.beginLine(), nested)) {
+                own.add(row);
+            }
+        }
+        return own;
+    }
+
+    private static boolean insideNested(int line, List<ASTTypeDeclaration> nested) {
+        for (ASTTypeDeclaration type : nested) {
+            if (line >= type.getBeginLine() && line <= type.getEndLine()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -263,8 +345,9 @@ final class PmdFileMetricsBuilder {
             int cognitive = cognitiveBox == null ? 0 : cognitiveBox;
             int npath = npathBox == null ? 0 : npathBox;
             PmdAstMethodStats.Stats counted = stats == null ? PmdAstMethodStats.EMPTY : stats;
-            // Risk LOC = NCSS (yorum / boş satır hariç). physical satır aralığı yorumları da kapsar — skora girmez.
-            int codeLines = ncss > 0 ? ncss : Math.max(countCodeLinesExcludingComments(sourceText, start, end), 1);
+            // codeLines satırdır. Uzunluk skoru NCSS'te kalır; NCSS yoksa satır sayısı yedek olur.
+            int codeLines = Math.max(countCodeLinesExcludingComments(sourceText, start, end), 1);
+            int lengthForScore = ncss > 0 ? ncss : codeLines;
 
             MethodMetric skeleton = MethodMetric.withoutLegacyExtensions(
                     name, kind, signature, returnType(exec), start, end,
@@ -279,7 +362,8 @@ final class PmdFileMetricsBuilder {
                     counted.catchClauses(), counted.localVariableCount());
             HealthScoreEngine engine = HealthScoreEngine.get();
             HealthScoreEngine.Signals signals = new HealthScoreEngine.Signals(
-                    cyclo, cognitive, npath, codeLines, arity, counted.maxNestingDepth());
+                    cyclo, cognitive, npath, lengthForScore, arity, counted.maxNestingDepth(),
+                    counted.elseIfChain());
             List<HealthScoreEngine.Hit> hits = hitsInRange(fileViolations, start, end, exec);
             int emptyCatch = emptyCatchCount(hits, counted.emptyCatchBlocks());
             hits = withEmptyCatchHits(hits, emptyCatch);
@@ -355,43 +439,37 @@ final class PmdFileMetricsBuilder {
     }
 
     /**
-     * Metot içi analiz başarısız — karmaşıklık 100, kalite 0 yazılır
-     * (gerçek ölçüm yapılamadı — manuel inceleme).
+     * Metot içi analiz başarısız. Skor yazılmaz; tabloda risk_level ölçülemedi olur.
+     * Satır sayısı kaynaktan sayılır. Dallanma ve kalite uydurulmaz.
      */
     private static MethodMetric failedMethodStub(
             String sourceText,
             String name, String kind, String signature, String returnTypeLabel,
             int start, int end, int physical, int arity,
             RiskCalculator riskCalculator, boolean attachDuplicateHashes) {
-        int locNominal = Math.max(physical, 100);
-        int ccNominal = Math.max(50, PmdHeavyMetricGuard.CYCLO_HEAVY);
-        int nestNominal = 25;
-        double finalScore = RiskCalculator.SCORE_MAX;
+        int codeLines = Math.max(countCodeLinesExcludingComments(sourceText, start, end), physical > 0 ? 1 : 0);
         java.util.ArrayList<String> factors = new java.util.ArrayList<>();
-        factors.add("METRICS_IMPUTED=true: bu metot bitirilemedi (yığın veya bellek). Karmaşıklık 100, kalite 0 yazıldı; gerçek ölçüm değildir.");
+        factors.add("ölçülemedi: bu metot bitirilemedi (yığın veya bellek). Skor yazılmadı.");
         factors.add("PMD_ANALYSIS_INCOMPLETE: -Xss/-Xmx büyütün veya dosyayı hariç tutun. Daha geniş yığınla yeniden tarayınca gerçek metrik gelir.");
-        boolean god = true;
 
         PmdSourceMethodHashes.Hashes hashes = PmdSourceMethodHashes.fromSourceSlice(sourceText, start, end);
         String bodyHash = hashes.bodyHash() == null ? "" : hashes.bodyHash();
         String methodHash = bodyHash;
         String structuralOut = attachDuplicateHashes ? hashes.structuralHash() : "";
-        // Bu koşuda metrik tamamlanamadı — önbellekten eski (düşük) skoru ASLA yeniden kullanma.
+        // Bu koşuda metrik tamamlanamadı — önbellekten eski skoru yeniden kullanma.
         boolean reuse = false;
 
-        int npath = PmdMetricsAligner.NPATH_CAP;
-        int ncss = locNominal;
-        return new MethodMetric(name, kind, signature, returnTypeLabel, start, end, ccNominal, physical, locNominal,
-                locNominal,
+        return new MethodMetric(name, kind, signature, returnTypeLabel, start, end, 0, physical, codeLines,
+                0,
                 0,
                 0, 0, 0,
                 0, 0, 0, 0,
                 0, 0, 0, 0,
-                0, 0, nestNominal,
+                0, 0, 0,
                 arity,
-                god, finalScore, RiskLevel.CRITICAL, factors, null,
+                false, 0, null, factors, null,
                 HalsteadMetrics.EMPTY, List.of(), List.of(),
-                methodHash, reuse, List.of(), bodyHash, structuralOut, npath, ncss, true, 0, false);
+                methodHash, reuse, List.of(), bodyHash, structuralOut, 0, 0, true, 0, true);
     }
 
     private static String cycloFactor(int cyclo) {
@@ -434,11 +512,11 @@ final class PmdFileMetricsBuilder {
     private static String analysisFailureDetail(Throwable t) {
         if (t instanceof StackOverflowError) {
             return "Yığın taştı (stack overflow): ifade veya AST çok derin. "
-                    + "Bu metot ölçülemedi; karmaşıklık 100, kalite 0 yazıldı. Dosyanın diğer metotları sürer.";
+                    + "Bu metot ölçülemedi. Dosyanın diğer metotları sürer.";
         }
         if (t instanceof OutOfMemoryError) {
             return "Bellek yetmedi (out of memory): bu metot ölçülürken heap doldu. "
-                    + "Karmaşıklık 100, kalite 0 yazıldı. Dosyanın diğer metotları sürer.";
+                    + "Bu metot ölçülemedi. Dosyanın diğer metotları sürer.";
         }
         if (t == null) {
             return "unknown";

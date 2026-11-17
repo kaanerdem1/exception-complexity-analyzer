@@ -1077,12 +1077,20 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
                 ps.setBoolean(i++, parser);
                 ps.setBoolean(i++, !parser);
                 ps.setInt(i++, row.method.codeLines());
-                ps.setBigDecimal(i++, java.math.BigDecimal.valueOf(row.method.riskScore())
-                        .setScale(2, java.math.RoundingMode.HALF_UP));
-                ps.setString(i++, row.method.riskLevel() == null ? null : row.method.riskLevel().name());
-                if (qualityColumn) {
-                    ps.setBigDecimal(i++, java.math.BigDecimal.valueOf(row.method.qualityScore())
+                if (row.method.metricsImputed()) {
+                    ps.setNull(i++, java.sql.Types.NUMERIC);
+                    ps.setString(i++, "ölçülemedi");
+                    if (qualityColumn) {
+                        ps.setNull(i++, java.sql.Types.NUMERIC);
+                    }
+                } else {
+                    ps.setBigDecimal(i++, java.math.BigDecimal.valueOf(row.method.riskScore())
                             .setScale(2, java.math.RoundingMode.HALF_UP));
+                    ps.setString(i++, row.method.riskLevel() == null ? null : row.method.riskLevel().name());
+                    if (qualityColumn) {
+                        ps.setBigDecimal(i++, java.math.BigDecimal.valueOf(row.method.qualityScore())
+                                .setScale(2, java.math.RoundingMode.HALF_UP));
+                    }
                 }
                 ps.setString(i++, com.scanner.complexity.ComplexityJson.riskInputs(report, row.method));
                 ps.setString(i++, row.method.bodyHash());
@@ -1127,6 +1135,9 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
 
     /** DÜŞÜK skor ve basit getter/setter env.method_risk_analyze'e yazılmaz. */
     private boolean shouldPersistMethodRisk(com.scanner.complexity.MethodMetric m, ComplexityInsert ci) {
+        if (m.metricsImputed()) {
+            return true;
+        }
         if (com.scanner.complexity.MethodAccessorFilter.isTrivialShortAccessor(m)
                 || com.scanner.complexity.MethodAccessorFilter.isSimpleGetterOrSetter(m)) {
             ci.methodsSkippedAccessor++;

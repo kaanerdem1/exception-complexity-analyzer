@@ -47,6 +47,6 @@ final class ScanExitEvaluator {
     }
 
     private static boolean meetsOrExceeds(RiskLevel actual, RiskLevel gate) {
-        return actual.ordinal() >= gate.ordinal();
+        return actual != null && actual.ordinal() >= gate.ordinal();
     }
 }

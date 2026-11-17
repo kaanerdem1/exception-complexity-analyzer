@@ -6,6 +6,7 @@
 # bilişsel 64 ile 424 aynı riske yapışmaz. Tavanın altındaki metotların puanı değişmez.
 # Tavanlar: döngüsel 40 (uç 200), bilişsel 60 (uç 1000), satır 120 (uç 500),
 # iç içe geçme 10 (uç 40), parametre 7 (uç 20).
+# Düz else-if derinliği artırmaz. 50 kol birinci payı doldurur, 40'lık taşma payını alamaz.
 # NPath sayım tavanı 10000. 12 art arda if 4096 yoldur ve gerçek sayı yazılır. 10000'e varınca durur.
 # Dallanma 30 ve üstü hiç sayılmaz, 10000 yazılır. NPath puanı logaritmiktir, tavan 10000:
 # 1 yol 0 risk, 20 yol payın yüzde 33'ü, 298 yol yüzde 62'si, 10000 yol tamamı.

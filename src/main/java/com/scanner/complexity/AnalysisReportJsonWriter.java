@@ -272,10 +272,17 @@ public final class AnalysisReportJsonWriter {
         w.name("maxNestingDepth").value(m.maxNestingDepth());
         w.name("parameterCount").value(m.parameterCount());
         w.name("emptyCatchBlocks").value(m.emptyCatchBlocks());
-        w.name("complexityScore").value(m.riskScore());
-        w.name("complexityBand").value(HealthScoreEngine.complexityBand(m.riskScore()));
-        w.name("qualityScore").value(m.qualityScore());
-        w.name("qualityBand").value(HealthScoreEngine.qualityBand(m.qualityScore()));
+        if (m.metricsImputed()) {
+            w.name("complexityScore").nullValue();
+            w.name("complexityBand").value("ölçülemedi");
+            w.name("qualityScore").nullValue();
+            w.name("qualityBand").value("ölçülemedi");
+        } else {
+            w.name("complexityScore").value(m.riskScore());
+            w.name("complexityBand").value(HealthScoreEngine.complexityBand(m.riskScore()));
+            w.name("qualityScore").value(m.qualityScore());
+            w.name("qualityBand").value(HealthScoreEngine.qualityBand(m.qualityScore()));
+        }
         if (m.excludedFromHealthScore()) {
             w.name("excludedFromHealthScore").value(true);
         }
@@ -336,9 +343,15 @@ public final class AnalysisReportJsonWriter {
         w.beginObject();
         w.name("profile").value(profileVersion == null ? "" : profileVersion);
         w.name("pipeline").value(pipeline);
-        w.name("complexityScore").value(RiskCalculator.round3(m.riskScore()));
-        w.name("qualityScore").value(RiskCalculator.round3(m.qualityScore()));
-        w.name("npathCapped").value(m.npathComplexity() >= PmdMetricsAligner.NPATH_CAP);
+        if (m.metricsImputed()) {
+            w.name("complexityScore").nullValue();
+            w.name("qualityScore").nullValue();
+            w.name("status").value("ölçülemedi");
+        } else {
+            w.name("complexityScore").value(RiskCalculator.round3(m.riskScore()));
+            w.name("qualityScore").value(RiskCalculator.round3(m.qualityScore()));
+        }
+        w.name("npathCapped").value(!m.metricsImputed() && m.npathComplexity() >= PmdMetricsAligner.NPATH_CAP);
         w.name("units");
         w.beginObject();
         w.name("complexityScore").value("puan");
@@ -350,11 +363,11 @@ public final class AnalysisReportJsonWriter {
         w.beginObject();
         w.name("codeLines").value(m.codeLines());
         w.name("nonCodeLines").value(Math.max(0, m.physicalLines() - m.codeLines()));
-        w.name("cyclomaticComplexity").value(m.cyclomaticComplexity());
-        w.name("cognitiveComplexity").value(m.cognitiveComplexity());
-        w.name("npathComplexity").value(m.npathComplexity());
-        w.name("ncssCount").value(m.ncssCount());
-        w.name("maxNestingDepth").value(m.maxNestingDepth());
+        writeMeasuredCount(w, "cyclomaticComplexity", m.cyclomaticComplexity(), m.metricsImputed());
+        writeMeasuredCount(w, "cognitiveComplexity", m.cognitiveComplexity(), m.metricsImputed());
+        writeMeasuredCount(w, "npathComplexity", m.npathComplexity(), m.metricsImputed());
+        writeMeasuredCount(w, "ncssCount", m.ncssCount(), m.metricsImputed());
+        writeMeasuredCount(w, "maxNestingDepth", m.maxNestingDepth(), m.metricsImputed());
         w.name("parameterCount").value(m.parameterCount());
         w.endObject();
         // Üretilen kolon empty_catch_blocks bu yolu okur.
@@ -362,7 +375,11 @@ public final class AnalysisReportJsonWriter {
         w.beginObject();
         w.name("extraSubScores");
         w.beginObject();
-        w.name("emptyCatchBlocks").value(m.emptyCatchBlocks());
+        if (m.metricsImputed()) {
+            w.name("emptyCatchBlocks").nullValue();
+        } else {
+            w.name("emptyCatchBlocks").value(m.emptyCatchBlocks());
+        }
         w.endObject();
         w.endObject();
         writeStringList(w, "riskFactors", m.riskFactors());
@@ -388,6 +405,15 @@ public final class AnalysisReportJsonWriter {
             w.endObject();
         }
         w.endArray();
+    }
+
+    private static void writeMeasuredCount(JsonWriter w, String name, int value, boolean imputed) throws IOException {
+        w.name(name);
+        if (imputed) {
+            w.nullValue();
+        } else {
+            w.value(value);
+        }
     }
 
     private static void writeStringList(JsonWriter w, String name, List<String> values) throws IOException {

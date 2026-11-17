@@ -56,8 +56,7 @@ public record MethodMetric(
         /** PMD {@link net.sourceforge.pmd.lang.java.metrics.JavaMetrics#NCSS}. */
         int ncssCount,
         /**
-         * true: ölçüm JVM/PMD limiti yüzünden tamamlanamadı; CC/LOC vb. nominal,
-         * risk skoru el ile yükseltildi (policy: maks. inceleme bayrağı).
+         * true: ölçüm bitmedi. Skor yok; tabloda risk_level ölçülemedi yazılır.
          */
         boolean metricsImputed,
         /** Kalite skoru: yüksek = iyi. Karmaşıklık {@link #riskScore} alanındadır (yüksek = kötü). */

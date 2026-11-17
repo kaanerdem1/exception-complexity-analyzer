@@ -9,6 +9,7 @@ import net.sourceforge.pmd.lang.java.ast.ASTIfStatement;
 import net.sourceforge.pmd.lang.java.ast.ASTInfixExpression;
 import net.sourceforge.pmd.lang.java.ast.ASTLambdaExpression;
 import net.sourceforge.pmd.lang.java.ast.ASTLocalVariableDeclaration;
+import net.sourceforge.pmd.lang.java.ast.ASTStatement;
 import net.sourceforge.pmd.lang.java.ast.ASTSwitchLabel;
 import net.sourceforge.pmd.lang.java.ast.ASTWhileStatement;
 
@@ -17,6 +18,7 @@ final class PmdAstMethodStats {
 
     record Stats(
             int maxNestingDepth,
+            int elseIfChain,
             int logicalStatements,
             int exitPoints,
             int catchClauses,
@@ -29,7 +31,7 @@ final class PmdAstMethodStats {
             int maxBooleanOperatorsInCondition) {
     }
 
-    static final Stats EMPTY = new Stats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    static final Stats EMPTY = new Stats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     private PmdAstMethodStats() {
     }
@@ -42,6 +44,7 @@ final class PmdAstMethodStats {
 
     private static final class Counter {
         int maxNest;
+        int maxElseIfChain;
         int statements;
         int exits;
         int catches;
@@ -57,9 +60,12 @@ final class PmdAstMethodStats {
             String name = node.getXPathNodeName();
             int nextNest = nestDepth;
             int nextTry = tryDepth;
-            if (isControlFlow(name)) {
+            if (isControlFlow(name) && !isElseIf(node)) {
                 nextNest = nestDepth + 1;
                 maxNest = Math.max(maxNest, nextNest);
+            }
+            if (node instanceof ASTIfStatement ifStmt && !isElseIf(node)) {
+                maxElseIfChain = Math.max(maxElseIfChain, elseIfChainLength(ifStmt));
             }
             if ("TryStatement".equals(name)) {
                 nextTry = tryDepth + 1;
@@ -127,9 +133,28 @@ final class PmdAstMethodStats {
         }
 
         Stats toStats() {
-            return new Stats(maxNest, statements, exits, catches, emptyCatch, genericCatch, lambdas, locals,
-                    maxTryNest, switchCases, maxBoolOps);
+            return new Stats(maxNest, maxElseIfChain, statements, exits, catches, emptyCatch, genericCatch, lambdas,
+                    locals, maxTryNest, switchCases, maxBoolOps);
         }
+    }
+
+    /** {@code else if} aynı kattadır. PMD bunu iç içe IfStatement olarak kurar. */
+    private static boolean isElseIf(Node node) {
+        if (!(node instanceof ASTIfStatement)) {
+            return false;
+        }
+        Node parent = node.getParent();
+        return parent instanceof ASTIfStatement parentIf && parentIf.getElseBranch() == node;
+    }
+
+    private static int elseIfChainLength(ASTIfStatement head) {
+        int chain = 1;
+        ASTStatement branch = head.getElseBranch();
+        while (branch instanceof ASTIfStatement next) {
+            chain++;
+            branch = next.getElseBranch();
+        }
+        return chain;
     }
 
     private static boolean isControlFlow(String xpathName) {

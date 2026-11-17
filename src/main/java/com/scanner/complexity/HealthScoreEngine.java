@@ -67,8 +67,19 @@ public final class HealthScoreEngine {
         return catalog;
     }
 
-    public record Signals(int cyclomatic, int cognitive, int npath, int ncss, int parameters, int nesting) {
+    /**
+     * {@code elseIfChain} düz else-if kol sayısıdır. Derinlik sayımına girmez.
+     * 50 kol derinlik kuralının birinci payını doldurur. İkinci pay yalnız gerçek derinlikten gelir.
+     */
+    public record Signals(int cyclomatic, int cognitive, int npath, int ncss, int parameters, int nesting,
+                          int elseIfChain) {
+        public Signals(int cyclomatic, int cognitive, int npath, int ncss, int parameters, int nesting) {
+            this(cyclomatic, cognitive, npath, ncss, parameters, nesting, 0);
+        }
     }
+
+    /** Bu kadar düz else-if kolu, derinlik kuralının birinci payını doldurur. */
+    private static final int ELSE_IF_CHAIN_FULL = 50;
 
     public record Hit(String ruleName, boolean lowWeight) {
         public Hit(String ruleName) {
@@ -466,6 +477,12 @@ public final class HealthScoreEngine {
         if (rule.kind() == Kind.METRIC) {
             int value = signal(signals, rule.signal());
             note += " sayım=" + value + " tavan=" + rule.metricMax();
+            if ("maxNestingDepth".equals(rule.signal()) && signals.elseIfChain() > 1) {
+                int fromChain = elseIfFirstShare(signals.elseIfChain(), Math.max(1, rule.metricMax()));
+                if (fromChain > value) {
+                    note += ", else-if " + signals.elseIfChain() + " kol birinci pay";
+                }
+            }
             if (rule.overflowMax() > rule.metricMax() && value > rule.metricMax()) {
                 note += ", " + rule.overflowMax() + "'e kadar artar";
             }
@@ -519,11 +536,12 @@ public final class HealthScoreEngine {
         if (rule.kind() == Kind.METRIC) {
             int value = Math.max(0, signal(signals, rule.signal()));
             int max = Math.max(1, rule.metricMax());
+            int baseValue = metricBaseValue(rule, signals, value, max);
             double base;
             if (rule.logScale() && max > 1) {
-                base = Math.log(Math.max(1, value)) / Math.log(max);
+                base = Math.log(Math.max(1, baseValue)) / Math.log(max);
             } else {
-                base = value / (double) max;
+                base = baseValue / (double) max;
             }
             base = Math.min(1, Math.max(0, base));
             double extra = 0;
@@ -539,6 +557,21 @@ public final class HealthScoreEngine {
         }
         int penalty = rule.penalty() < 1 ? 100 : rule.penalty();
         return Math.max(0, 100.0 - Math.min(100, hits * (double) penalty));
+    }
+
+    /** Gerçek derinlik taşmayı belirler. Else-if kolu yalnız birinci payı, tavanı geçmeden doldurur. */
+    private static int metricBaseValue(Rule rule, Signals signals, int value, int max) {
+        if (!"maxNestingDepth".equals(rule.signal()) || signals.elseIfChain() <= 1) {
+            return value;
+        }
+        return Math.max(value, elseIfFirstShare(signals.elseIfChain(), max));
+    }
+
+    private static int elseIfFirstShare(int chain, int max) {
+        if (chain <= 1) {
+            return 0;
+        }
+        return Math.min(max, chain * max / ELSE_IF_CHAIN_FULL);
     }
 
     private static int signal(Signals signals, String name) {

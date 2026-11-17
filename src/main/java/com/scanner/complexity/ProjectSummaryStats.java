@@ -35,7 +35,7 @@ final class ProjectSummaryStats {
     }
 
     synchronized void addMethod(String moduleRoot, MethodMetric method) {
-        if (method.excludedFromHealthScore()) {
+        if (method.excludedFromHealthScore() || method.metricsImputed() || method.riskLevel() == null) {
             return;
         }
         moduleSummaries.addMethod(moduleRoot, method);

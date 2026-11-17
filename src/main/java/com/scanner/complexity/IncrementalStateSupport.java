@@ -10,7 +10,11 @@ import java.util.Map;
 /** Shared {@link AnalyzerState} load/save and cache identity (parser + PMD-native). */
 final class IncrementalStateSupport {
 
-    static final int CACHE_SCHEMA_VERSION = 15;
+    /**
+     * 17: düz else-if derinliği büyütmez; kol sayısı derinlik kuralının yalnız birinci payını doldurur.
+     * 16 iç sınıf metotlarını da kapsar. Eski dosya önbelleği bu skorları taşımaz.
+     */
+    static final int CACHE_SCHEMA_VERSION = 17;
 
     private IncrementalStateSupport() {
     }
