@@ -13,9 +13,10 @@
 # Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
 # Kalitede kritik ilk ihlal 15, yüksek 10, orta 6. Üç ayrı kritik kural kaliteyi 55 yapar.
 # Ham düşüş 60'a kadar birebir iner. 60'ın üstü yavaşlar: 7 kritik kural yaklaşık 18, 12 kural yaklaşık 5.
-# Aynı kuralın tekrarı en fazla dilimin yarısı kadar ekler. Boş catch adet başı 10, 4 adette 40'ta durur.
-# Düşük öncelik dilimi 20 puandır. Adet karekökle artar: 1 adet az düşer, 64 adet dilimi doldurur.
-# Düşük öncelik kuralları birlikte en fazla 60 puan düşürür.
+# Aynı kuralın tekrarı en fazla dilimin yarısı kadar ekler. Boş catch adet başı 10, 4 adette 40, 5 adette 42.
+# Stil kuralları doluysa sırayla 15, 10, 8, 7 ve 3 puan düşer. 64 adet bir basamağı doldurur.
+# Karmaşıklık 75'i geçince ihlalsiz kalitenin tavanı iner. Hata payı tavanın altında da görünür.
+# Dört ayrı kritik hata 40'ta kalır. Risk formülü değişmez.
 
 version: health-v1
 priority_weights:
@@ -265,7 +266,7 @@ rules:
     scope: method
     priority: critical
     kind: violation
-    # Her boş catch bu kuraldan 25 puan düşer. 1→75, 2→50, 3→25, 4 ve üstü→0.
+    # Kalitede adet başı 10. 1→90, 2→80, 4→60, 5→58. Risk payı ayrıca dolar ve 4 adette durur.
     penalty: 25
     aliases: [SwallowedException]
   - id: AvoidCatchingGenericException

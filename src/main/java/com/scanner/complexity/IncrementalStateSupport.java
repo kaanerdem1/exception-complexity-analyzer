@@ -11,10 +11,10 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 17: düz else-if derinliği büyütmez; kol sayısı derinlik kuralının yalnız birinci payını doldurur.
-     * 16 iç sınıf metotlarını da kapsar. Eski dosya önbelleği bu skorları taşımaz.
+     * 18: stil merdiveni, beşinci boş catch ve yüksek karmaşıklıkta kalite tavanı.
+     * Eski dosya önbelleği bu kalite puanlarını taşımaz.
      */
-    static final int CACHE_SCHEMA_VERSION = 17;
+    static final int CACHE_SCHEMA_VERSION = 18;
 
     private IncrementalStateSupport() {
     }

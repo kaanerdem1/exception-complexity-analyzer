@@ -129,9 +129,9 @@ public final class HealthScoreEngine {
                     List.of("excludedFromHealthScore=true"));
         }
         List<String> notes = new ArrayList<>();
-        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true);
-        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true);
+        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, 0);
         double complexity = invert(complexityRaw);
+        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, complexity);
         return new MethodScore(complexity, complexityBand(complexity), complexityLevel(complexity),
                 round(qualityRaw), qualityBand(qualityRaw), List.copyOf(notes));
     }
@@ -155,8 +155,8 @@ public final class HealthScoreEngine {
         double methodComplexity = weightSum == 0 ? 0 : complexityWeighted / weightSum;
         double methodQuality = weightSum == 0 ? 100 : qualityWeighted / weightSum;
         List<String> notes = new ArrayList<>();
-        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false);
-        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false);
+        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0);
+        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0);
         double classComplexity = invert(classComplexityRaw);
         double classQuality = classQualityRaw;
         int w1 = catalog.w1();
@@ -212,10 +212,11 @@ public final class HealthScoreEngine {
         }
         String formula = "karmaşıklık = risk kalemlerinin toplamı; tavanı aşan sayım logaritmik artar, "
                 + "uçta pay ikiye katlanır, toplam 100'de durur; "
-                + "kalite = 100 - düşüş (kritik 15, yüksek 10, orta 6, düşük 20; "
-                + "düşük adet karekökle artar, 64 adette dolar, birlikte en fazla 60; "
+                + "kalite = 100 - düşüş (kritik 15, yüksek 10, orta 6; "
+                + "stil kuralları 15, 10, 8, 7, 3; 64 adette dolar; "
                 + "ham düşüş 60'a kadar birebir, sonrası yavaşlar ve 0'a yapışmaz; "
-                + "aynı kuralın tekrarı dilimin yarısına kadar ekler; boş catch adet başı 10, 4 adette 40); "
+                + "aynı kuralın tekrarı dilimin yarısına kadar ekler; boş catch adet başı 10, 4 adette 40, 5 adette 42; "
+                + "karmaşıklık 75'i geçince ihlalsiz kalite tavanı iner, hata payı tavanın altında da görünür); "
                 + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
                 + " w2=" + catalog.w2()
                 + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
@@ -273,21 +274,28 @@ public final class HealthScoreEngine {
         return modules;
     }
 
-    /** Düşük öncelik kalite kuralları birlikte bundan fazla düşürmez. */
-    private static final double LOW_QUALITY_CAP = 60;
     /**
      * Ham düşüş bu değere kadar kaliteden birebir iner. Üstü yavaşlar ve 0'a yapışmaz.
      * 60'ta kalite 40'tır. Kalan 40 puan, her 58 ham puanda yaklaşık 1/e oranında erir.
      */
     private static final double QUALITY_LINEAR_UNTIL = 60;
     private static final double QUALITY_TAIL = 58;
-    /** Bu kadar adet, düşük öncelik kuralının dilimini doldurur. Adet karekökle artar. */
+    /** Bu kadar adet, bir stil kuralının kendi basamağını doldurur. Adet karekökle artar. */
     private static final int LOW_QUALITY_FULL_HITS = 64;
     /** İlk ihlalden sonraki adet bu kadar olunca kritik/yüksek dilimin yarısı daha eklenir. */
     private static final int EXTRA_HITS_FULL = 15;
+    /** Dolu stil kuralları bu sırayla düşer. Beşinci kural 3 puandır. */
+    private static final double[] STYLE_STEPS = {15, 10, 8, 7, 3};
+    /** Karmaşıklık bu değeri geçince ihlalsiz kalitenin tavanı inmeye başlar. */
+    private static final double QUALITY_CAP_FROM = 75;
+    /** Dört ayrı kritik hata bu kalitede kalır. Tavan, hata payını bunun altına itmez. */
+    private static final double QUALITY_DEFECT_FLOOR = 40;
+    /** Dört kritik hata hamda 60 düşer. Tavan altındaki hata payı bu ölçeğe sığar. */
+    private static final double QUALITY_DEFECT_SPAN = 60;
 
     private double average(Axis axis, Scope scope, Signals signals, List<Hit> hits, boolean recordType,
-                           Set<String> omittedSignals, List<String> notes, boolean explainTotal) {
+                           Set<String> omittedSignals, List<String> notes, boolean explainTotal,
+                           double complexityRisk) {
         List<Rule> rules = catalog.rules(axis, scope);
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Boolean> sealedOnly = new LinkedHashMap<>();
@@ -303,7 +311,8 @@ public final class HealthScoreEngine {
             }
         }
         if (axis == Axis.QUALITY) {
-            return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes, explainTotal);
+            return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes, explainTotal,
+                    complexityRisk);
         }
         double weightSum = 0;
         for (Rule rule : rules) {
@@ -356,19 +365,18 @@ public final class HealthScoreEngine {
     }
 
     /**
-     * Kalite 100'den başlar. İhlal edilen kural, önceliğine göre doğrudan düşürür.
-     * Kritik 15, yüksek 10, orta 6, düşük 20. Üç ayrı kritik kural kaliteyi 55'e indirir.
-     * Ham düşüş 60'a kadar birebir yazılır. 60'ın üstü yavaşlar: 7 kritik kural yaklaşık 18,
-     * 12 kritik kural yaklaşık 5 kalır. Düşük adet karekökle artar; 64 adet dilimi doldurur.
-     * Düşük öncelikliler birlikte en fazla 60 düşer.
-     * İlk ihlal dilimi doldurur, aynı kuralın tekrarı dilimin yarısına kadar ekler.
-     * Ceza puanı 100'ün altındaki kural (boş catch) dilimden bağımsızdır: her adet 10, 4 adette 40.
+     * Kalite 100'den başlar. Kritik ilk ihlal 15, yüksek 10, orta 6.
+     * Stil kuralları doluysa 15, 10, 8, 7 ve 3 puan düşer. 64 adet bir basamağı doldurur.
+     * Boş catch adet başı 10, 4 adette 40, 5 adette 42. Risk formülü buna eklenmez.
+     * Karmaşıklık 75'i geçince ihlalsiz kalite tavanı iner. Hata payı tavanın altında da görünür.
+     * Dört ayrı kritik hata 40'ın altına itilmez.
      */
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
-                                    Set<String> omittedSignals, List<String> notes, boolean explainTotal) {
+                                    Set<String> omittedSignals, List<String> notes, boolean explainTotal,
+                                    double complexityRisk) {
         List<PointLine> strong = new ArrayList<>();
-        List<PointLine> low = new ArrayList<>();
+        List<StyleHit> styles = new ArrayList<>();
         for (Rule rule : rules) {
             if (omittedMetric(rule, omittedSignals)) {
                 notes.add(rule.id() + " ölçülemedi, bu parametre atlandı");
@@ -380,55 +388,57 @@ public final class HealthScoreEngine {
             int hitsForRule = counts.getOrDefault(rule.id(), 0);
             int weight = weightOf(rule, sealedOnly);
             double slice = qualitySlice(weight);
-            boolean lowPriority = weight <= catalog.lowPriorityWeight();
-            double drop;
-            if (lowPriority && rule.kind() == Kind.VIOLATION && hitsForRule > 0 && rule.penalty() >= 100) {
+            boolean style = weight <= catalog.lowPriorityWeight()
+                    && rule.kind() == Kind.VIOLATION
+                    && hitsForRule > 0
+                    && rule.penalty() >= 100;
+            if (style) {
                 double fill = Math.min(1.0, Math.sqrt(hitsForRule / (double) LOW_QUALITY_FULL_HITS));
-                drop = fill * slice;
-            } else {
-                double sub = ruleScore(rule, signals, hitsForRule);
-                if (sub >= 100) {
-                    continue;
+                styles.add(new StyleHit(rule, signals, hitsForRule, fill));
+                continue;
+            }
+            double sub = ruleScore(rule, signals, hitsForRule);
+            if (sub >= 100) {
+                continue;
+            }
+            double fraction = (100.0 - sub) / 100.0;
+            double drop;
+            if (rule.penalty() < 100) {
+                drop = fraction * 40.0;
+                if ("EmptyCatchBlock".equals(rule.id()) && hitsForRule >= 5) {
+                    drop += 2;
                 }
-                double fraction = (100.0 - sub) / 100.0;
-                if (rule.penalty() < 100) {
-                    drop = fraction * 40.0;
-                } else {
-                    drop = fraction * slice;
-                    if (hitsForRule > 1) {
-                        double extra = Math.min(1.0, Math.sqrt((hitsForRule - 1) / (double) EXTRA_HITS_FULL));
-                        drop += slice * 0.5 * extra;
-                    }
+            } else {
+                drop = fraction * slice;
+                if (hitsForRule > 1) {
+                    double extra = Math.min(1.0, Math.sqrt((hitsForRule - 1) / (double) EXTRA_HITS_FULL));
+                    drop += slice * 0.5 * extra;
                 }
             }
-            PointLine line = new PointLine(scoreNote(rule, signals, hitsForRule), drop);
-            if (lowPriority) {
-                low.add(line);
-            } else {
-                strong.add(line);
+            strong.add(new PointLine(scoreNote(rule, signals, hitsForRule), drop));
+        }
+        styles.sort(Comparator.comparingDouble(StyleHit::fill).reversed());
+        List<PointLine> styleLines = new ArrayList<>();
+        for (int i = 0; i < styles.size(); i++) {
+            double step = i < STYLE_STEPS.length ? STYLE_STEPS[i] : 0;
+            StyleHit hit = styles.get(i);
+            double drop = step * hit.fill;
+            if (drop <= 0) {
+                continue;
             }
+            styleLines.add(new PointLine(scoreNote(hit.rule, hit.signals, hit.hits), drop));
         }
-        double lowSum = 0;
-        for (PointLine line : low) {
-            lowSum += line.exact;
+        double defectDrop = 0;
+        for (PointLine line : strong) {
+            defectDrop += line.exact;
         }
-        boolean capped = lowSum > LOW_QUALITY_CAP;
         List<PointLine> all = new ArrayList<>(strong);
-        if (!capped) {
-            all.addAll(low);
-        } else if (lowSum > 0) {
-            double scale = LOW_QUALITY_CAP / lowSum;
-            for (PointLine line : low) {
-                all.add(new PointLine(line.text, line.exact * scale));
-            }
-        }
+        all.addAll(styleLines);
         double deduction = writeBalanced(all, notes, " düşüş=", false);
-        if (capped) {
-            notes.add("düşük öncelik kuralları ham düşüş " + round(lowSum)
-                    + ", tavan " + (int) LOW_QUALITY_CAP + " uygulandı");
-        }
         double quality = softenQuality(deduction);
-        if (explainTotal) {
+        double beforeCap = quality;
+        quality = capQualityForComplexity(complexityRisk, quality, defectDrop, notes, explainTotal);
+        if (explainTotal && quality == beforeCap) {
             if (deduction <= QUALITY_LINEAR_UNTIL) {
                 notes.add("kalite " + quality + " = 100 - " + deduction);
             } else {
@@ -437,6 +447,29 @@ public final class HealthScoreEngine {
             }
         }
         return quality;
+    }
+
+    /**
+     * İhlalsiz kalite, karmaşıklık 75'ten sonra iner: 75'te 89, 90'da 74, 100'de 64.
+     * Hata payı bu tavandan yarıya yakın oranda düşer. Dört kritik hata 40'ta kalır.
+     */
+    private static double capQualityForComplexity(double complexityRisk, double quality, double defectDrop,
+                                                  List<String> notes, boolean explain) {
+        if (complexityRisk <= QUALITY_CAP_FROM) {
+            return quality;
+        }
+        double ceiling = 89 - (complexityRisk - QUALITY_CAP_FROM);
+        double shown = defectDrop <= 0
+                ? Math.min(quality, ceiling)
+                : Math.min(quality, ceiling - (ceiling - QUALITY_DEFECT_FLOOR) / QUALITY_DEFECT_SPAN * defectDrop);
+        shown = round(Math.max(0, shown));
+        if (explain && shown + 0.001 < quality) {
+            notes.add("karmaşıklık " + round(complexityRisk) + " için kalite tavanı " + round(ceiling));
+        }
+        return shown;
+    }
+
+    private record StyleHit(Rule rule, Signals signals, int hits, double fill) {
     }
 
     /** 60'a kadar birebir. Sonrası kalan puanı eritir, sıfıra yapıştırmaz. */
