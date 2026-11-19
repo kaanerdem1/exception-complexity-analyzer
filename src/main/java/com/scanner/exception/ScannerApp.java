@@ -483,14 +483,13 @@ public final class ScannerApp {
      */
     /**
      * Exception taramasından sonra klonlanmış her repoda kod karmaşıklığı analizi yapar (complexity.enabled=true).
-     * Skorlar tabloya yazıldıysa o reponun -pmd.json, -pmd.md, -pmd-violations.xml ve summary.md dosyası bırakılmaz.
-     * Tabloya yazılmazsa bu dosyalar durur. analyzer-state, job.json ve scan.log her zaman durur.
-     * Bir reponun analizi hata verirse diğerleri devam eder. scanRunId varsa sonuçlar env.method_risk_analyze
-     * ve env.method_similarity tablolarına bu taramaya bağlı yazılır; her repo kendi transaction'ında.
+     * Skorlar env.method_risk_analyze tablosuna yazılır. Rapor json, markdown, ihlal xml ve summary.md üretilmez.
+     * analyzer-state, job.json ve scan.log durur. Bir reponun analizi hata verirse diğerleri devam eder.
+     * scanRunId varsa sonuçlar bu taramaya bağlı yazılır; her repo kendi transaction'ında.
      */
     private static int analyzeComplexity(Config cfg, List<RepoResult> results, Path dir, Long scanRunId) {
         if (scanRunId == null && cfg.db.enabled) {
-            log("Uyarı: tarama veritabanına yazılmadığı için karmaşıklık sonuçları tablolara yazılmayacak, sadece dosyalara.");
+            log("Uyarı: tarama veritabanına yazılmadığı için karmaşıklık sonuçları tablolara yazılmayacak.");
         }
         java.util.Set<String> warned = new java.util.HashSet<String>();
         long dbMethods = 0, dbMatched = 0, dbGroups = 0, dbSkipped = 0, dbBelowMin = 0,
@@ -498,10 +497,7 @@ public final class ScannerApp {
         log("Kod karmaşıklığı analizi başlıyor (complexity.engine=" + cfg.complexity.engine.name().toLowerCase(java.util.Locale.ROOT)
                 + "): " + results.size() + " repo");
         ComplexityRunner runner = new ComplexityRunner(cfg.complexity);
-        StringBuilder md = new StringBuilder("# Kod karmaşıklığı özeti\n\n"
-                + "| Proje | Repo | Yol | Dosya | Metot | Kod satırı | Karmaşıklık | Seviye | Kalite | YÜKSEK | KRİTİK | p95 | Rapor |\n"
-                + "|---|---|---|--:|--:|--:|--:|---|--:|--:|--:|--:|---|\n");
-        int done = 0, written = 0, archived = 0;
+        int done = 0, written = 0;
         for (RepoResult r : results) {
             done++;
             RepoInfo repo = r.repo;
@@ -515,7 +511,6 @@ public final class ScannerApp {
             long started = System.currentTimeMillis();
             try {
                 for (ComplexityRunner.Engine engine : runner.engines()) {
-                    // Rapor diske yazılır. Skor tabloya geçince json, md ve ihlal xml silinir.
                     ComplexityRunner.Result res = runner.analyze(repo.localPath, dir.resolve(base), engine);
                     AnalysisReport.Summary s = res.summary();
                     long high = s.methodRiskDistribution().getOrDefault(RiskLevel.HIGH, 0L);
@@ -525,7 +520,6 @@ public final class ScannerApp {
                             s.projectRiskLevel(), s.projectQualityScore(),
                             com.scanner.complexity.HealthScoreEngine.qualityBand(s.projectQualityScore()),
                             high, critical, seconds(System.currentTimeMillis() - started)));
-                    boolean scoresStored = false;
                     if (scanRunId != null) {
                         try (PostgresExporter pg = new PostgresExporter(cfg)) {
                             PostgresExporter.ComplexityInsert ci = pg.insertComplexity(scanRunId, repo, res.report());
@@ -544,22 +538,10 @@ public final class ScannerApp {
                                 dbMatched += ci.methodsMatched;
                             }
                             if (ci.groups > 0) dbGroups += ci.groups;
-                            scoresStored = ci.methods >= 0 && ci.errors.stream()
-                                    .noneMatch(err -> err.startsWith(cfg.db.methodRiskTable + ":"));
                         } catch (Exception e) {
                             log(String.format("[%d/%d] %s (%s): HATA: karmaşıklık sonuçları veritabanına yazılamadı: %s",
                                     done, results.size(), repo.id(), res.engine(), e.getMessage()));
                         }
-                    }
-                    if (scoresStored) {
-                        discardComplexityArchive(res.json(), res.markdown());
-                    } else {
-                        archived++;
-                        Path report = res.markdown() != null ? res.markdown() : res.json();
-                        md.append(String.format(java.util.Locale.ROOT, "| %s | %s | %s | %d | %d | %d | %.1f | %s | %.1f | %d | %d | %.1f | [%s](%s) |%n",
-                                repo.projectKey, repo.slug, res.engine(), s.filesParsed(), s.methodCount(), s.totalCodeLines(),
-                                s.projectRiskScore(), s.projectRiskLevel(), s.projectQualityScore(), high, critical, s.methodRiskScoreP95(),
-                                report.getFileName(), dir.relativize(report).toString().replace('\\', '/')));
                     }
                 }
                 written++;
@@ -570,16 +552,8 @@ public final class ScannerApp {
                 log(String.format("[%d/%d] %s: HATA: karmaşıklık analizi yapılamadı: %s", done, results.size(), repo.id(), e));
             }
         }
-        if (archived > 0) {
-            try {
-                java.nio.file.Files.createDirectories(dir);
-                java.nio.file.Files.write(dir.resolve("summary.md"), md.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            } catch (java.io.IOException e) {
-                log("HATA: karmaşıklık özeti yazılamadı: " + e.getMessage());
-            }
-            log("Kod karmaşıklığı raporları (" + archived + " repo, tabloya yazılamayanlar): " + dir.toAbsolutePath());
-        } else if (scanRunId != null && written > 0) {
-            log("Kod karmaşıklığı skorları veritabanında; json, md ve ihlal xml silindi (" + written + " repo).");
+        if (scanRunId != null && written > 0) {
+            log("Kod karmaşıklığı skorları veritabanında (" + written + " repo). Rapor json, md ve ihlal xml yazılmadı.");
         }
         if (scanRunId != null) {
             log("Veritabanı: " + dbMethods + " metot " + cfg.db.methodRiskTable + " tablosuna (" + dbMatched
@@ -596,50 +570,6 @@ public final class ScannerApp {
                     + (dbSkipped > 0 ? "; tablonun kısıtına uymayan " + dbSkipped + " grup atlandı" : "") + ".");
         }
         return written;
-    }
-
-    /** Tablo skorları aldıktan sonra bu koşunun rapor kopyasını siler. State dosyasına dokunmaz. */
-    private static void discardComplexityArchive(Path json, Path markdown) {
-        Path violations = null;
-        if (json != null && json.getFileName() != null) {
-            String name = json.getFileName().toString();
-            String suffix = "-pmd.json";
-            if (name.endsWith(suffix)) {
-                violations = json.resolveSibling(name.substring(0, name.length() - suffix.length()) + "-pmd-violations.xml");
-            }
-        }
-        deleteQuietly(json);
-        deleteQuietly(markdown);
-        deleteQuietly(violations);
-        Path parent = json == null ? null : json.getParent();
-        if (parent == null) {
-            return;
-        }
-        boolean empty;
-        try (java.util.stream.Stream<Path> children = java.nio.file.Files.list(parent)) {
-            empty = children.findAny().isEmpty();
-        } catch (java.io.IOException e) {
-            log("Uyarı: boş rapor klasörü silinemedi: " + parent + " (" + e.getMessage() + ")");
-            return;
-        }
-        try {
-            if (empty) {
-                java.nio.file.Files.deleteIfExists(parent);
-            }
-        } catch (java.io.IOException e) {
-            log("Uyarı: boş rapor klasörü silinemedi: " + parent + " (" + e.getMessage() + ")");
-        }
-    }
-
-    private static void deleteQuietly(Path path) {
-        if (path == null) {
-            return;
-        }
-        try {
-            java.nio.file.Files.deleteIfExists(path);
-        } catch (java.io.IOException e) {
-            log("Uyarı: rapor dosyası silinemedi: " + path + " (" + e.getMessage() + ")");
-        }
     }
 
     private static boolean resolveInDatabase(Config cfg, List<RepoResult> results) {

@@ -4,14 +4,13 @@ import com.scanner.exception.config.Config;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 /**
- * Klonlanmış repoyu PMD ile tarar, JSON ve Markdown yazar.
+ * Klonlanmış repoyu PMD ile tarar. Skor bellekte kalır ve tabloya yazılır.
+ * Rapor json, markdown ve ihlal xml üretilmez. Önbellek analyzer-state dosyasındadır.
  * Skor: health-score-catalog.yaml (karmaşıklık ve kalite ayrı).
  */
 public final class ComplexityRunner {
@@ -37,7 +36,7 @@ public final class ComplexityRunner {
         return java.util.List.of(Engine.PMD);
     }
 
-    /** Raporlar baseName + "-pmd.json/.md" ve "-pmd-violations.xml". */
+    /** Skor {@code report} içindedir. json ve markdown yazılmaz; ihlal xml de üretilmez. */
     public Result analyze(Path sourceRoot, Path baseName, Engine engine) throws IOException {
         return pmd(sourceRoot, baseName);
     }
@@ -45,34 +44,22 @@ public final class ComplexityRunner {
     private Result pmd(Path sourceRoot, Path baseName) throws IOException {
         RiskCalculator risk = RiskProfileLoader.createCalculator(profile("enterprise-java-pmd"), null);
         Path ruleset = Files.createTempFile("pmd-ruleset-", ".xml");
+        Path violations = Files.createTempFile("pmd-violations-", ".xml");
         try {
             try (InputStream in = ComplexityRunner.class.getResourceAsStream(RULESET_RESOURCE)) {
                 if (in == null) throw new IOException("PMD ruleset bulunamadı: " + RULESET_RESOURCE);
                 Files.copy(in, ruleset, StandardCopyOption.REPLACE_EXISTING);
             }
-            Path violations = sibling(baseName, "-pmd-violations.xml");
-            Files.createDirectories(violations.toAbsolutePath().getParent());
-            // PMD yolu summary modunda metotları özet hesaplanmadan önce atıyor (metot sayısı 0 çıkıyor); hep full
+            // PMD yolu summary modunda metotları özet hesaplanmadan önce atıyor (metot sayısı 0 çıkıyor); hep full.
+            // İhlal xml yalnız PMD'nin kendi çıktısı için geçicidir; skor bellekte kalır, dosya koşu bitince silinir.
             AnalysisReport report = new PmdNativeProjectScanner(cfg.charset, cfg.languageLevel,
                     options(true, baseName, Engine.PMD), cfg.top,
                     risk, ruleset, violations, true).scan(sourceRoot);
-            return write("pmd", report, sibling(baseName, "-pmd.json"), sibling(baseName, "-pmd.md"));
+            return new Result("pmd", report, null, null);
         } finally {
+            Files.deleteIfExists(violations);
             Files.deleteIfExists(ruleset);
         }
-    }
-
-    private Result write(String engine, AnalysisReport report, Path json, Path md) throws IOException {
-        Files.createDirectories(json.toAbsolutePath().getParent());
-        try (Writer w = Files.newBufferedWriter(json, StandardCharsets.UTF_8)) {
-            AnalysisReportJsonWriter.write(report, w, true, cfg.methodRiskMinScore);
-        }
-        if (cfg.markdown) {
-            try (Writer w = Files.newBufferedWriter(md, StandardCharsets.UTF_8)) {
-                StandaloneReportMarkdown.write(report, w);
-            }
-        }
-        return new Result(engine, report, json, cfg.markdown ? md : null);
     }
 
     private ScanOptions options(boolean fullDetail, Path baseName, Engine engine) {
@@ -103,10 +90,6 @@ public final class ComplexityRunner {
     /** complexity.risk.profile boşsa yolun kendi varsayılan profili */
     private String profile(String fallback) {
         return cfg.riskProfile.isEmpty() ? fallback : cfg.riskProfile;
-    }
-
-    private static Path sibling(Path baseName, String suffix) {
-        return baseName.resolveSibling(baseName.getFileName() + suffix);
     }
 
     /** scanReports/yyyyMMdd_HHmm değil; analyzer-cache/<proje>/<repo>-pmd-analyzer-state.json */
