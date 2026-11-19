@@ -11,10 +11,9 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 18: stil merdiveni, beşinci boş catch ve yüksek karmaşıklıkta kalite tavanı.
-     * Eski dosya önbelleği bu kalite puanlarını taşımaz.
+     * 19: PMD kural listesi bir kez çalışır. Eski önbellek her ihlali iki kez saymış puanı taşır.
      */
-    static final int CACHE_SCHEMA_VERSION = 18;
+    static final int CACHE_SCHEMA_VERSION = 19;
 
     private IncrementalStateSupport() {
     }
