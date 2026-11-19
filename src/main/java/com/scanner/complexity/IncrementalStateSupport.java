@@ -11,9 +11,10 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 19: PMD kural listesi bir kez çalışır. Eski önbellek her ihlali iki kez saymış puanı taşır.
+     * 20: kalite tavanı karmaşıklık 50'den sonra iner; dört kritik hata tavanın yarısına düşer.
+     * Eski önbellek bu kalite puanlarını taşımaz.
      */
-    static final int CACHE_SCHEMA_VERSION = 19;
+    static final int CACHE_SCHEMA_VERSION = 20;
 
     private IncrementalStateSupport() {
     }

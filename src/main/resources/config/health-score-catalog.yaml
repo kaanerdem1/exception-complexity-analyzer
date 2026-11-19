@@ -15,8 +15,9 @@
 # Ham düşüş 60'a kadar birebir iner. 60'ın üstü yavaşlar: 7 kritik kural yaklaşık 18, 12 kural yaklaşık 5.
 # Aynı kuralın tekrarı en fazla dilimin yarısı kadar ekler. Boş catch adet başı 10, 4 adette 40, 5 adette 42.
 # Stil kuralları doluysa sırayla 15, 10, 8, 7 ve 3 puan düşer. 64 adet bir basamağı doldurur.
-# Karmaşıklık 75'i geçince ihlalsiz kalitenin tavanı iner. Hata payı tavanın altında da görünür.
-# Dört ayrı kritik hata 40'ta kalır. Risk formülü değişmez.
+# Karmaşıklık 50'yi geçince ihlalsiz kalitenin tavanı iner: 50'de 89, 75'te 64, 100'de 39.
+# Dört kritik hata tavanın yarısına iner. Riski 50'nin altında dört kritik hata 40'tır.
+# Risk formülü değişmez.
 
 version: health-v1
 priority_weights:

@@ -216,7 +216,7 @@ public final class HealthScoreEngine {
                 + "stil kuralları 15, 10, 8, 7, 3; 64 adette dolar; "
                 + "ham düşüş 60'a kadar birebir, sonrası yavaşlar ve 0'a yapışmaz; "
                 + "aynı kuralın tekrarı dilimin yarısına kadar ekler; boş catch adet başı 10, 4 adette 40, 5 adette 42; "
-                + "karmaşıklık 75'i geçince ihlalsiz kalite tavanı iner, hata payı tavanın altında da görünür); "
+                + "karmaşıklık 50'yi geçince ihlalsiz kalite tavanı iner; dört kritik hata tavanın yarısına iner); "
                 + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
                 + " w2=" + catalog.w2()
                 + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
@@ -287,9 +287,7 @@ public final class HealthScoreEngine {
     /** Dolu stil kuralları bu sırayla düşer. Beşinci kural 3 puandır. */
     private static final double[] STYLE_STEPS = {15, 10, 8, 7, 3};
     /** Karmaşıklık bu değeri geçince ihlalsiz kalitenin tavanı inmeye başlar. */
-    private static final double QUALITY_CAP_FROM = 75;
-    /** Dört ayrı kritik hata bu kalitede kalır. Tavan, hata payını bunun altına itmez. */
-    private static final double QUALITY_DEFECT_FLOOR = 40;
+    private static final double QUALITY_CAP_FROM = 50;
     /** Dört kritik hata hamda 60 düşer. Tavan altındaki hata payı bu ölçeğe sığar. */
     private static final double QUALITY_DEFECT_SPAN = 60;
 
@@ -368,8 +366,7 @@ public final class HealthScoreEngine {
      * Kalite 100'den başlar. Kritik ilk ihlal 15, yüksek 10, orta 6.
      * Stil kuralları doluysa 15, 10, 8, 7 ve 3 puan düşer. 64 adet bir basamağı doldurur.
      * Boş catch adet başı 10, 4 adette 40, 5 adette 42. Risk formülü buna eklenmez.
-     * Karmaşıklık 75'i geçince ihlalsiz kalite tavanı iner. Hata payı tavanın altında da görünür.
-     * Dört ayrı kritik hata 40'ın altına itilmez.
+     * Karmaşıklık 50'yi geçince ihlalsiz kalite tavanı iner. Dört kritik hata tavanın yarısına iner.
      */
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
@@ -450,19 +447,20 @@ public final class HealthScoreEngine {
     }
 
     /**
-     * İhlalsiz kalite, karmaşıklık 75'ten sonra iner: 75'te 89, 90'da 74, 100'de 64.
-     * Hata payı bu tavandan yarıya yakın oranda düşer. Dört kritik hata 40'ta kalır.
+     * İhlalsiz kalite, karmaşıklık 50'den sonra iner: 50'de 89, 73'te 66, 75'te 64, 90'da 49, 100'de 39.
+     * Dört kritik hata bu tavanın yarısına iner. Bir kritik hata o aralığın dörtte biri kadar görünür.
      */
     private static double capQualityForComplexity(double complexityRisk, double quality, double defectDrop,
                                                   List<String> notes, boolean explain) {
         if (complexityRisk <= QUALITY_CAP_FROM) {
             return quality;
         }
-        double ceiling = 89 - (complexityRisk - QUALITY_CAP_FROM);
+        double ceiling = Math.max(0, 89 - (complexityRisk - QUALITY_CAP_FROM));
+        double anchor = ceiling / 2.0;
         double shown = defectDrop <= 0
                 ? Math.min(quality, ceiling)
-                : Math.min(quality, ceiling - (ceiling - QUALITY_DEFECT_FLOOR) / QUALITY_DEFECT_SPAN * defectDrop);
-        shown = round(Math.max(0, shown));
+                : Math.min(quality, ceiling - (ceiling - anchor) / QUALITY_DEFECT_SPAN * defectDrop);
+        shown = round(Math.max(0, Math.min(ceiling, shown)));
         if (explain && shown + 0.001 < quality) {
             notes.add("karmaşıklık " + round(complexityRisk) + " için kalite tavanı " + round(ceiling));
         }
