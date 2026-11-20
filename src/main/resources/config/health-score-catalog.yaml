@@ -13,8 +13,9 @@
 # Boş catch kaliteye ek olarak karmaşıklığa da girer; her adet 25 puan.
 # Kalitede kritik ilk ihlal 15, yüksek 10, orta 6. Üç ayrı kritik kural kaliteyi 55 yapar.
 # Ham düşüş 60'a kadar birebir iner. 60'ın üstü yavaşlar: 7 kritik kural yaklaşık 18, 12 kural yaklaşık 5.
-# Aynı kuralın tekrarı en fazla dilimin yarısı kadar ekler. Boş catch adet başı 10, 4 adette 40, 5 adette 42.
-# Stil kuralları doluysa sırayla 15, 10, 8, 7 ve 3 puan düşer. 64 adet bir basamağı doldurur.
+# Aynı kuralın tekrarı karekökle sürer, 16 adette bir dilim daha dolar ve durmaz. Boş catch adet başı 10, 4 adette 40, her fazlası 2.
+# Stil kuralları doluysa sırayla 15, 10, 8, 7, 3, 2 ve sonrası 1 puan düşer. 64 adet bir basamağı doldurur.
+# Stil düşüşü karmaşıklık tavanından sonra da kalır.
 # İhlalsiz kalite tavanı risk 39'da 100'dür ve risk 1 arttıkça 1 düşer: 50'de 89, 75'te 64, 100'de 39.
 # Dört kritik hata tavanın yarısına iner. Risk 59'a kadar dört kritik hata 40'tadır.
 # Risk formülü değişmez.
@@ -267,7 +268,7 @@ rules:
     scope: method
     priority: critical
     kind: violation
-    # Kalitede adet başı 10. 1→90, 2→80, 4→60, 5→58. Risk payı ayrıca dolar ve 4 adette durur.
+    # Kalitede adet başı 10. 1→90, 2→80, 4→60, 5→58, sonrası 2'şer iner. Risk payı ayrıca dolar ve 4 adette durur.
     penalty: 25
     aliases: [SwallowedException]
   - id: AvoidCatchingGenericException
