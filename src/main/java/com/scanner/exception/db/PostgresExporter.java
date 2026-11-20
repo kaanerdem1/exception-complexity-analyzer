@@ -971,6 +971,110 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
         private static final long serialVersionUID = 1L;
     }
 
+    public boolean hasFileHashColumn() throws SQLException {
+        return hasColumn(db.methodRiskTable, "file_hash");
+    }
+
+    /** Bu taramadan önceki, dosya hash'i dolu son tarama. Yoksa -1. */
+    public long previousHashedScan(long currentScanId, com.scanner.exception.model.RepoInfo repo) throws SQLException {
+        boolean repoColumns = hasColumn(db.methodRiskTable, "project_key") && hasColumn(db.methodRiskTable, "repo");
+        String sql = "SELECT max(scan_run_id) FROM " + db.methodRiskTable
+                + " WHERE file_hash IS NOT NULL AND scan_run_id < ?"
+                + (repoColumns ? " AND project_key = ? AND repo = ?" : "");
+        PreparedStatement ps = con.prepareStatement(sql);
+        try {
+            ps.setLong(1, currentScanId);
+            if (repoColumns) {
+                ps.setString(2, repo.projectKey);
+                ps.setString(3, repo.slug);
+            }
+            ResultSet rs = ps.executeQuery();
+            try {
+                return rs.next() && rs.getObject(1) != null ? rs.getLong(1) : -1L;
+            } finally {
+                rs.close();
+            }
+        } finally {
+            ps.close();
+        }
+    }
+
+    /** Dosya yolu → hash. Aynı yolda birden fazla hash varsa o dosya atlanır, yeniden ölçülür. */
+    public Map<String, String> fileHashes(long scanId, com.scanner.exception.model.RepoInfo repo) throws SQLException {
+        boolean repoColumns = hasColumn(db.methodRiskTable, "project_key") && hasColumn(db.methodRiskTable, "repo");
+        String sql = "SELECT file_path, min(file_hash), count(DISTINCT file_hash) FROM " + db.methodRiskTable
+                + " WHERE scan_run_id = ? AND file_hash IS NOT NULL"
+                + (repoColumns ? " AND project_key = ? AND repo = ?" : "")
+                + " GROUP BY file_path";
+        Map<String, String> out = new LinkedHashMap<String, String>();
+        PreparedStatement ps = con.prepareStatement(sql);
+        try {
+            ps.setLong(1, scanId);
+            if (repoColumns) {
+                ps.setString(2, repo.projectKey);
+                ps.setString(3, repo.slug);
+            }
+            ResultSet rs = ps.executeQuery();
+            try {
+                while (rs.next()) {
+                    if (rs.getInt(3) == 1) {
+                        out.put(rs.getString(1), rs.getString(2));
+                    }
+                }
+            } finally {
+                rs.close();
+            }
+        } finally {
+            ps.close();
+        }
+        return out;
+    }
+
+    /** Değişmeyen dosyaların satırlarını yeni taramaya kopyalar. */
+    public int copyUnchangedMethods(long newScanId, long previousScanId, com.scanner.exception.model.RepoInfo repo,
+                                    List<String> filePaths) throws SQLException {
+        if (filePaths == null || filePaths.isEmpty()) {
+            return 0;
+        }
+        String table = db.methodRiskTable;
+        boolean qualityColumn = hasColumn(table, "quality_score");
+        boolean repoColumns = hasColumn(table, "project_key") && hasColumn(table, "repo");
+        String sql = "INSERT INTO " + table
+                + " (scan_run_id, method_uid, file_path, class_name, method_signature, start_line, end_line, is_parser,"
+                + " is_pmd, ncss_loc, risk_score, risk_level"
+                + (qualityColumn ? ", quality_score" : "")
+                + ", risk_inputs_json, body_hash, structural_hash, java_method_id, created_at"
+                + (repoColumns ? ", project_key, repo" : "")
+                + ", file_hash) SELECT ?, method_uid, file_path, class_name, method_signature, start_line, end_line,"
+                + " is_parser, is_pmd, ncss_loc, risk_score, risk_level"
+                + (qualityColumn ? ", quality_score" : "")
+                + ", risk_inputs_json, body_hash, structural_hash, java_method_id, now()"
+                + (repoColumns ? ", project_key, repo" : "")
+                + ", file_hash FROM " + table
+                + " WHERE scan_run_id = ? AND file_path = ANY(?)"
+                + (repoColumns ? " AND project_key = ? AND repo = ?" : "")
+                + " ON CONFLICT (scan_run_id, method_uid, is_parser, is_pmd) DO NOTHING";
+        PreparedStatement ps = con.prepareStatement(sql);
+        try {
+            int i = 1;
+            ps.setLong(i++, newScanId);
+            ps.setLong(i++, previousScanId);
+            ps.setArray(i++, con.createArrayOf("text", filePaths.toArray()));
+            if (repoColumns) {
+                ps.setString(i++, repo.projectKey);
+                ps.setString(i, repo.slug);
+            }
+            int copied = ps.executeUpdate();
+            con.commit();
+            return copied;
+        } catch (SQLException e) {
+            rollbackQuietly();
+            throw e;
+        } finally {
+            ps.close();
+        }
+    }
+
     /**
      * Bir reponun karmaşıklık analizini scanRunId'li taramaya bağlı yazar. Metotlar ve kopya / benzer kod grupları
      * ayrı transaction'larda yazılır: birinin hatası diğerini geri almaz. Metotlar env.java_class / env.java_method
@@ -1053,14 +1157,16 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
         if (!qualityColumn) {
             ci.warnings.add(table + ".quality_score yok; sql/method_risk_quality_score.sql çalıştırılınca kalite skoru da yazılır");
         }
+        boolean fileHashColumn = hasColumn(table, "file_hash");
         PreparedStatement ps = con.prepareStatement("INSERT INTO " + table
                 + " (scan_run_id, method_uid, file_path, class_name, method_signature, start_line, end_line, is_parser,"
                 + " is_pmd, ncss_loc, risk_score, risk_level"
                 + (qualityColumn ? ", quality_score" : "")
                 + ", risk_inputs_json, body_hash, structural_hash, java_method_id,"
                 + " created_at" + (repoColumns ? ", project_key, repo" : "")
+                + (fileHashColumn ? ", file_hash" : "")
                 + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?" + (qualityColumn ? ",?" : "") + ",?::jsonb,?,?,?,now()"
-                + (repoColumns ? ",?,?" : "") + ")"
+                + (repoColumns ? ",?,?" : "") + (fileHashColumn ? ",?" : "") + ")"
                 + " ON CONFLICT (scan_run_id, method_uid, is_parser, is_pmd) DO NOTHING");
         int count = 0;
         try {
@@ -1098,7 +1204,10 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
                 setLong(ps, i++, row.ref.dbMethodId);
                 if (repoColumns) {
                     ps.setString(i++, repo.projectKey);
-                    ps.setString(i, repo.slug);
+                    ps.setString(i++, repo.slug);
+                }
+                if (fileHashColumn) {
+                    ps.setString(i, row.file.fileHash());
                 }
                 if (row.ref.dbMethodId != null) ci.methodsMatched++;
                 ps.addBatch();

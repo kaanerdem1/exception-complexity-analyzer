@@ -484,7 +484,8 @@ public final class ScannerApp {
     /**
      * Exception taramasından sonra klonlanmış her repoda kod karmaşıklığı analizi yapar (complexity.enabled=true).
      * Skorlar env.method_risk_analyze tablosuna yazılır. Rapor json, markdown, ihlal xml ve summary.md üretilmez.
-     * analyzer-state, job.json ve scan.log durur. Bir reponun analizi hata verirse diğerleri devam eder.
+     * file_hash kolonu varsa değişmeyen dosya önceki taramadan kopyalanır ve analyzer-state yazılmaz.
+     * Kolon yoksa analyzer-state durur. job.json ve scan.log durur. Bir reponun analizi hata verirse diğerleri devam eder.
      * scanRunId varsa sonuçlar bu taramaya bağlı yazılır; her repo kendi transaction'ında.
      */
     private static int analyzeComplexity(Config cfg, List<RepoResult> results, Path dir, Long scanRunId) {
@@ -509,17 +510,43 @@ public final class ScannerApp {
             }
             String base = GitRunner.safe(repo.projectKey) + "/" + GitRunner.safe(repo.slug);
             long started = System.currentTimeMillis();
+            long previousHashedScan = -1L;
             try {
+                if (scanRunId != null) {
+                    try (PostgresExporter pg = new PostgresExporter(cfg)) {
+                        if (pg.hasFileHashColumn()) {
+                            previousHashedScan = pg.previousHashedScan(scanRunId, repo);
+                            runner.databaseFileHashes(previousHashedScan < 0
+                                    ? java.util.Map.of()
+                                    : pg.fileHashes(previousHashedScan, repo));
+                        } else {
+                            runner.clearDatabaseFileHashes();
+                        }
+                    } catch (Exception e) {
+                        runner.clearDatabaseFileHashes();
+                        log(String.format("[%d/%d] %s: dosya hash'i okunamadı, dosyalar yeniden ölçülecek: %s",
+                                done, results.size(), repo.id(), e.getMessage()));
+                    }
+                }
                 for (ComplexityRunner.Engine engine : runner.engines()) {
                     ComplexityRunner.Result res = runner.analyze(repo.localPath, dir.resolve(base), engine);
                     AnalysisReport.Summary s = res.summary();
                     long high = s.methodRiskDistribution().getOrDefault(RiskLevel.HIGH, 0L);
                     long critical = s.methodRiskDistribution().getOrDefault(RiskLevel.CRITICAL, 0L);
-                    log(String.format("[%d/%d] %s (%s): %d dosya, %d metot, karmaşıklık %.1f (%s), kalite %.1f (%s), %d yüksek / %d kritik metot (%s)",
-                            done, results.size(), repo.id(), res.engine(), s.filesParsed(), s.methodCount(), s.projectRiskScore(),
-                            s.projectRiskLevel(), s.projectQualityScore(),
-                            com.scanner.complexity.HealthScoreEngine.qualityBand(s.projectQualityScore()),
-                            high, critical, seconds(System.currentTimeMillis() - started)));
+                    int unchanged = runner.unchangedFiles().size();
+                    if (unchanged > 0 && s.filesParsed() == 0) {
+                        log(String.format("[%d/%d] %s (%s): %d dosya değişmemiş, PMD çalışmadı (%s)",
+                                done, results.size(), repo.id(), res.engine(), unchanged,
+                                seconds(System.currentTimeMillis() - started)));
+                    } else {
+                        log(String.format("[%d/%d] %s (%s): %d dosya, %d metot, karmaşıklık %.1f (%s), kalite %.1f (%s), %d yüksek / %d kritik metot%s (%s)",
+                                done, results.size(), repo.id(), res.engine(), s.filesParsed(), s.methodCount(), s.projectRiskScore(),
+                                s.projectRiskLevel(), s.projectQualityScore(),
+                                com.scanner.complexity.HealthScoreEngine.qualityBand(s.projectQualityScore()),
+                                high, critical,
+                                unchanged > 0 ? ", " + unchanged + " dosya değişmemiş" : "",
+                                seconds(System.currentTimeMillis() - started)));
+                    }
                     if (scanRunId != null) {
                         try (PostgresExporter pg = new PostgresExporter(cfg)) {
                             PostgresExporter.ComplexityInsert ci = pg.insertComplexity(scanRunId, repo, res.report());
@@ -538,6 +565,12 @@ public final class ScannerApp {
                                 dbMatched += ci.methodsMatched;
                             }
                             if (ci.groups > 0) dbGroups += ci.groups;
+                            if (previousHashedScan >= 0 && !runner.unchangedFiles().isEmpty()) {
+                                int copied = pg.copyUnchangedMethods(scanRunId, previousHashedScan, repo,
+                                        runner.unchangedFiles());
+                                log(String.format("[%d/%d] %s: %d dosya değişmemiş, %d metot önceki taramadan kopyalandı",
+                                        done, results.size(), repo.id(), runner.unchangedFiles().size(), copied));
+                            }
                         } catch (Exception e) {
                             log(String.format("[%d/%d] %s (%s): HATA: karmaşıklık sonuçları veritabanına yazılamadı: %s",
                                     done, results.size(), repo.id(), res.engine(), e.getMessage()));

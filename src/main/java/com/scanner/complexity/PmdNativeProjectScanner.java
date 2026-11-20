@@ -50,6 +50,9 @@ public final class PmdNativeProjectScanner {
     private final Path rulesetFile;
     private final Path violationsXmlPath;
     private final boolean runRulesetPhase;
+    /** Önceki taramadaki dosya hash'i. Boşsa dosya atlanmaz. */
+    private Map<String, String> dbFileHashes = Map.of();
+    private final List<String> unchangedFiles = new ArrayList<>();
 
     public PmdNativeProjectScanner(Charset charset, ParserConfiguration.LanguageLevel languageLevel,
                                    ScanOptions scanOptions, int topN, RiskCalculator riskCalculator,
@@ -64,6 +67,15 @@ public final class PmdNativeProjectScanner {
         this.runRulesetPhase = runRulesetPhase;
     }
 
+    /** Tabloya yazılmış dosya hash'leri. Eşleşen dosya PMD'ye girmez. */
+    public void useDatabaseFileHashes(Map<String, String> hashes) {
+        this.dbFileHashes = hashes == null ? Map.of() : hashes;
+    }
+
+    public List<String> unchangedFiles() {
+        return List.copyOf(unchangedFiles);
+    }
+
     public AnalysisReport scan(Path root) throws IOException {
         long started = System.nanoTime();
         Path absoluteRoot = root.toAbsolutePath().normalize();
@@ -75,9 +87,10 @@ public final class PmdNativeProjectScanner {
         try {
             PmdScanDiagnosticsLog.stepStart("1/7", "Kaynak keşfi (.java dosyaları)");
             JavaSourceDiscovery.Result discovery = JavaSourceDiscovery.collect(absoluteRoot, base, errors, scanOptions);
-            sources = discovery.paths();
-            logDiscovery(discovery, sources.size());
-            PmdScanDiagnosticsLog.stepDone("1/7", sources.size() + " dosya");
+            sources = withoutUnchanged(discovery.paths(), base);
+            logDiscovery(discovery, discovery.paths().size());
+            PmdScanDiagnosticsLog.stepDone("1/7", discovery.paths().size() + " dosya"
+                    + (unchangedFiles.isEmpty() ? "" : ", " + unchangedFiles.size() + " değişmemiş"));
         } catch (Exception e) {
             PmdScanDiagnosticsLog.stepFail("1/7", "kaynak keşfi", e);
             return null; // unreachable
@@ -224,7 +237,8 @@ public final class PmdNativeProjectScanner {
 
         System.err.println("[PMD-NATIVE] Toplam süre: " + elapsedMs + " ms");
 
-        AnalysisReport.Summary summary = ReportAggregates.buildSummary(sources.size(), files, errors, absoluteRoot);
+        AnalysisReport.Summary summary = ReportAggregates.buildSummary(
+                sources.size() + unchangedFiles.size(), files, errors, absoluteRoot);
         List<AnalysisReport.RiskHotspot> hotspots = ReportAggregates.buildHotspots(files, topN);
 
         return new AnalysisReport(
@@ -243,6 +257,24 @@ public final class PmdNativeProjectScanner {
                 duplicateStatistics,
                 duplicateGroups,
                 pmdPhase);
+    }
+
+    private List<Path> withoutUnchanged(List<Path> discovered, Path base) throws IOException {
+        unchangedFiles.clear();
+        if (dbFileHashes.isEmpty()) {
+            return discovered;
+        }
+        List<Path> changed = new ArrayList<>();
+        for (Path source : discovered) {
+            String relative = JavaSourceDiscovery.relativePath(base, source);
+            String previous = dbFileHashes.get(relative);
+            if (previous != null && !previous.isEmpty() && previous.equals(HashService.hashFile(source))) {
+                unchangedFiles.add(relative);
+            } else {
+                changed.add(source);
+            }
+        }
+        return changed;
     }
 
     private static List<Path> filterRulesetSources(List<Path> sources, Path base,
@@ -291,7 +323,7 @@ public final class PmdNativeProjectScanner {
                                          boolean attachDuplicateHashes, IncrementalAnalysisEngine incrementalEngine,
                                          PmdCacheRunCounters cacheCounters) throws IOException {
         if (sources.isEmpty()) {
-            return List.of();
+            return new ArrayList<>();
         }
         List<FileMetric> files = Collections.synchronizedList(new ArrayList<>());
         List<FileError> errorSink = Collections.synchronizedList(errors);

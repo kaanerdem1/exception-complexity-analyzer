@@ -7,6 +7,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Klonlanmış repoyu PMD ile tarar. Skor bellekte kalır ve tabloya yazılır.
@@ -27,9 +29,27 @@ public final class ComplexityRunner {
     private static final String RULESET_RESOURCE = "/config/pmd-ruleset-complexity.xml";
 
     private final Config.Complexity cfg;
+    private boolean databaseFileHash;
+    private Map<String, String> dbFileHashes = Map.of();
+    private List<String> lastUnchanged = List.of();
 
     public ComplexityRunner(Config.Complexity cfg) {
         this.cfg = cfg;
+    }
+
+    /** Önceki taramadaki dosya hash'leri. Verilince analyzer-state yazılmaz. */
+    public void databaseFileHashes(Map<String, String> hashes) {
+        this.databaseFileHash = true;
+        this.dbFileHashes = hashes == null ? Map.of() : Map.copyOf(hashes);
+    }
+
+    public void clearDatabaseFileHashes() {
+        this.databaseFileHash = false;
+        this.dbFileHashes = Map.of();
+    }
+
+    public List<String> unchangedFiles() {
+        return lastUnchanged;
     }
 
     public java.util.List<Engine> engines() {
@@ -42,6 +62,7 @@ public final class ComplexityRunner {
     }
 
     private Result pmd(Path sourceRoot, Path baseName) throws IOException {
+        lastUnchanged = List.of();
         RiskCalculator risk = RiskProfileLoader.createCalculator(profile("enterprise-java-pmd"), null);
         Path ruleset = Files.createTempFile("pmd-ruleset-", ".xml");
         Path violations = Files.createTempFile("pmd-violations-", ".xml");
@@ -52,9 +73,14 @@ public final class ComplexityRunner {
             }
             // PMD yolu summary modunda metotları özet hesaplanmadan önce atıyor (metot sayısı 0 çıkıyor); hep full.
             // İhlal xml yalnız PMD'nin kendi çıktısı için geçicidir; skor bellekte kalır, dosya koşu bitince silinir.
-            AnalysisReport report = new PmdNativeProjectScanner(cfg.charset, cfg.languageLevel,
+            PmdNativeProjectScanner scanner = new PmdNativeProjectScanner(cfg.charset, cfg.languageLevel,
                     options(true, baseName, Engine.PMD), cfg.top,
-                    risk, ruleset, violations, true).scan(sourceRoot);
+                    risk, ruleset, violations, true);
+            if (databaseFileHash) {
+                scanner.useDatabaseFileHashes(dbFileHashes);
+            }
+            AnalysisReport report = scanner.scan(sourceRoot);
+            lastUnchanged = scanner.unchangedFiles();
             return new Result("pmd", report, null, null);
         } finally {
             Files.deleteIfExists(violations);
@@ -65,7 +91,7 @@ public final class ComplexityRunner {
     private ScanOptions options(boolean fullDetail, Path baseName, Engine engine) {
         ScanOptions d = ScanOptions.defaults();
         Path stateFile = null;
-        if (cfg.incrementalCache) {
+        if (cfg.incrementalCache && !databaseFileHash) {
             String suffix = "-pmd-analyzer-state.json";
             stateFile = persistentStateFile(baseName, suffix);
             try {
