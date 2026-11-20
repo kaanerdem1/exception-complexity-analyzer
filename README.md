@@ -439,13 +439,7 @@ Tarama yolu:
 |---|---|---|
 | `pmd` | Ruleset + PMD AST / JavaMetrics | `health-score-catalog.yaml` |
 
-Raporlar tarama klasöründe `complexity/` altına yazılır (sunucuda `GET /api/scans/{id}/files` ile listelenip indirilebilir):
-
-| Dosya | İçerik |
-|---|---|
-| `complexity/summary.md` | Repo ve yol başına özet: dosya, metot, kod satırı, proje riski, yüksek / kritik metot sayısı |
-| `complexity/<proje>/<repo>.json`, `.md` | Parser yolu: tüm metrikler (varsayılan `complexity.detail=full` ile her metot ve `riskInputs`; `summary` sadece dosya özetleri ve en riskli metotlar) ve Türkçe okunabilir rapor |
-| `complexity/<proje>/<repo>-pmd.json`, `-pmd.md`, `-pmd-violations.xml` | PMD yolu: aynı raporlar ve PMD ihlalleri (her zaman `full`: analizörün PMD yolu `summary` modunda metot sayısını 0 hesaplıyor) |
+Skor `env.method_risk_analyze` tablosuna yazılır. Markdown, json, ihlal xml ve `summary.md` üretilmez. `complexity.detail=full` metot metriklerini bellekte tutar; `summary` yalnız dosya özeti ve en riskli metotları tutar. PMD yolu her zaman `full` çalışır.
 
 ### Artımlı önbellek — kapatma (agent / kod)
 

@@ -10,7 +10,6 @@ enum ScanPhase {
     PARSING,
     REPORT_ASSEMBLY,
     WRITE_JSON,
-    WRITE_MARKDOWN,
     EXIT_EVAL,
     COMPLETE;
 
@@ -21,7 +20,6 @@ enum ScanPhase {
             case PARSING -> "parse ve metrik";
             case REPORT_ASSEMBLY -> "rapor özeti";
             case WRITE_JSON -> "JSON yazımı";
-            case WRITE_MARKDOWN -> "Markdown yazımı";
             case EXIT_EVAL -> "çıkış kodu değerlendirme";
             case COMPLETE -> "tamamlandı";
         };
@@ -34,7 +32,6 @@ enum ScanPhase {
             case PARSING -> "parse and metrics";
             case REPORT_ASSEMBLY -> "report assembly";
             case WRITE_JSON -> "JSON write";
-            case WRITE_MARKDOWN -> "Markdown write";
             case EXIT_EVAL -> "exit code evaluation";
             case COMPLETE -> "complete";
         };

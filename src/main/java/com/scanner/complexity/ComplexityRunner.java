@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * Klonlanmış repoyu PMD ile tarar. Skor bellekte kalır ve tabloya yazılır.
- * Rapor json, markdown ve ihlal xml üretilmez. Önbellek analyzer-state dosyasındadır.
+ * Rapor json ve ihlal xml üretilmez. Önbellek analyzer-state dosyasındadır.
  * Skor: health-score-catalog.yaml (karmaşıklık ve kalite ayrı).
  */
 public final class ComplexityRunner {
@@ -20,7 +20,7 @@ public final class ComplexityRunner {
     public enum Engine { PMD }
 
     /** Bir yolun sonucu */
-    public record Result(String engine, AnalysisReport report, Path json, Path markdown) {
+    public record Result(String engine, AnalysisReport report, Path json) {
         public AnalysisReport.Summary summary() {
             return report.summary();
         }
@@ -56,7 +56,7 @@ public final class ComplexityRunner {
         return java.util.List.of(Engine.PMD);
     }
 
-    /** Skor {@code report} içindedir. json ve markdown yazılmaz; ihlal xml de üretilmez. */
+    /** Skor {@code report} içindedir. json yazılmaz; ihlal xml de üretilmez. */
     public Result analyze(Path sourceRoot, Path baseName, Engine engine) throws IOException {
         return pmd(sourceRoot, baseName);
     }
@@ -81,7 +81,7 @@ public final class ComplexityRunner {
             }
             AnalysisReport report = scanner.scan(sourceRoot);
             lastUnchanged = scanner.unchangedFiles();
-            return new Result("pmd", report, null, null);
+            return new Result("pmd", report, null);
         } finally {
             Files.deleteIfExists(violations);
             Files.deleteIfExists(ruleset);

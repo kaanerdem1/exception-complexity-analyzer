@@ -2,9 +2,7 @@ package com.scanner.complexity;
 
 import com.github.javaparser.ParserConfiguration;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -67,16 +65,6 @@ public final class PmdScanMain {
                 }
                 System.err.println("[PMD-SCAN] JSON: " + options.output().toAbsolutePath().normalize());
             }
-            if (options.markdown() != null) {
-                Path parent = options.markdown().getParent();
-                if (parent != null) {
-                    Files.createDirectories(parent);
-                }
-                try (Writer w = Files.newBufferedWriter(options.markdown(), StandardCharsets.UTF_8)) {
-                    StandaloneReportMarkdown.write(report, w);
-                }
-                System.err.println("[PMD-SCAN] Markdown: " + options.markdown().toAbsolutePath().normalize());
-            }
 
             AnalysisReport.Summary s = report.summary();
             System.err.println("[PMD-SCAN] Done: " + s.filesParsed() + " parsed, " + s.filesFailed() + " failed, "
@@ -92,9 +80,6 @@ public final class PmdScanMain {
         if (options.output() != null) {
             System.err.println("[PMD-SCAN] JSON hedef: " + options.output().toAbsolutePath().normalize());
         }
-        if (options.markdown() != null) {
-            System.err.println("[PMD-SCAN] Markdown hedef: " + options.markdown().toAbsolutePath().normalize());
-        }
     }
 
     private static void printUsage() {
@@ -108,7 +93,6 @@ public final class PmdScanMain {
                   --path=<dir|file>        Kaynak kökü (zorunlu)
                   --language-level=<n>     JAVA_17 (varsayılan), JAVA_11, JAVA_6, ...
                   --output=<file>          JSON rapor
-                  --markdown=<file>        Türkçe Markdown rapor
                   --top=<n>                En yüksek CC hotspot (varsayılan 20)
                   --encoding=<charset>     UTF-8 (varsayılan)
                   --compact                Tek satır JSON
@@ -130,7 +114,7 @@ public final class PmdScanMain {
                 """);
     }
 
-    private record Options(Path path, Path output, Path markdown, int top, Charset charset,
+    private record Options(Path path, Path output, int top, Charset charset,
                            ParserConfiguration.LanguageLevel languageLevel, ScanOptions scanOptions,
                            String riskProfile, Path riskConfig, Path ruleset, Path violationsXml,
                            boolean runRulesetPhase, ScanPipeline pipeline, boolean compact, boolean help) {
@@ -138,7 +122,6 @@ public final class PmdScanMain {
         static Options parse(String[] args) {
             Path path = null;
             Path output = null;
-            Path markdown = null;
             int top = 20;
             Charset charset = StandardCharsets.UTF_8;
             ParserConfiguration.LanguageLevel languageLevel = ParserConfiguration.LanguageLevel.JAVA_17;
@@ -168,8 +151,6 @@ public final class PmdScanMain {
                     path = Paths.get(value(arg));
                 } else if (arg.startsWith("--output=")) {
                     output = optionalPath(arg, "--output");
-                } else if (arg.startsWith("--markdown=")) {
-                    markdown = optionalPath(arg, "--markdown");
                 } else if (arg.startsWith("--top=")) {
                     top = Integer.parseInt(value(arg));
                 } else if (arg.startsWith("--encoding=")) {
@@ -216,7 +197,7 @@ public final class PmdScanMain {
             }
             ScanOptions scanOptions = ScanOptions.fromCli(includes, excludes, workers, progressEvery, detail,
                     !noDefaultIgnores, incrementalState, freshIncremental, true, 50, true, 0, false);
-            return new Options(path, output, markdown, top, charset, languageLevel, scanOptions, riskProfile,
+            return new Options(path, output, top, charset, languageLevel, scanOptions, riskProfile,
                     riskConfig, ruleset, violationsXml, runRulesetPhase, pipeline, compact, help);
         }
 

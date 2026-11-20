@@ -84,9 +84,6 @@ public final class ClassicPmdMain {
 
     private static void logTargets(Options options) {
         System.err.println("[CLASSIC-PMD] XML hedef: " + options.output().toAbsolutePath().normalize());
-        if (options.markdown() != null) {
-            System.err.println("[CLASSIC-PMD] Markdown hedef: " + options.markdown().toAbsolutePath().normalize());
-        }
     }
 
     private static void printUsage() {
@@ -110,14 +107,13 @@ public final class ClassicPmdMain {
                 """);
     }
 
-    private record Options(Path path, Path output, Path markdown, Path ruleset, Charset charset,
+    private record Options(Path path, Path output, Path ruleset, Charset charset,
                            ParserConfiguration.LanguageLevel languageLevel, ScanOptions scanOptions,
                            boolean help) {
 
         static Options parse(String[] args) {
             Path path = null;
             Path output = null;
-            Path markdown = null;
             Path ruleset = Path.of("config/pmd-ruleset-complexity.xml");
             Charset charset = StandardCharsets.UTF_8;
             ParserConfiguration.LanguageLevel languageLevel = ParserConfiguration.LanguageLevel.JAVA_17;
@@ -134,8 +130,6 @@ public final class ClassicPmdMain {
                     path = Paths.get(value(arg));
                 } else if (arg.startsWith("--output=")) {
                     output = Paths.get(value(arg));
-                } else if (arg.startsWith("--markdown=")) {
-                    markdown = Paths.get(value(arg));
                 } else if (arg.startsWith("--ruleset=")) {
                     ruleset = Paths.get(value(arg));
                 } else if (arg.startsWith("--encoding=")) {
@@ -163,7 +157,7 @@ public final class ClassicPmdMain {
             ScanOptions scanOptions = ScanOptions.fromCli(includes, excludes, workers, 500,
                     ScanOptions.ReportDetail.FULL, !noDefaultIgnores, null, false, false, 50, false, 0,
                     false);
-            return new Options(path, output, markdown, ruleset, charset, languageLevel, scanOptions, help);
+            return new Options(path, output, ruleset, charset, languageLevel, scanOptions, help);
         }
 
         private static String value(String arg) {

@@ -483,7 +483,7 @@ public final class ScannerApp {
      */
     /**
      * Exception taramasından sonra klonlanmış her repoda kod karmaşıklığı analizi yapar (complexity.enabled=true).
-     * Skorlar env.method_risk_analyze tablosuna yazılır. Rapor json, markdown, ihlal xml ve summary.md üretilmez.
+     * Skorlar env.method_risk_analyze tablosuna yazılır. Rapor json, ihlal xml ve summary.md üretilmez.
      * file_hash kolonu varsa değişmeyen dosya önceki taramadan kopyalanır ve analyzer-state yazılmaz.
      * Kolon yoksa analyzer-state durur. job.json ve scan.log durur. Bir reponun analizi hata verirse diğerleri devam eder.
      * scanRunId varsa sonuçlar bu taramaya bağlı yazılır; her repo kendi transaction'ında.

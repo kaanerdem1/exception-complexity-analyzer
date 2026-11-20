@@ -195,8 +195,6 @@ public final class Config {
         public final boolean nearDuplicates;
         /** Bir repoda aynı anda ayrıştırılan dosya sayısı; 0 = işlemci sayısı kadar (bellek yetmezse düşürün) */
         public final int workers;
-        /** JSON'un yanında okunabilir Markdown raporu da yazılsın mı */
-        public final boolean markdown;
         /** Boş: health-score-catalog. Eski parser profili yok. */
         public final String riskProfile;
         /** Repo başına analyzer-state.json (rapor klasöründe *-parser-analyzer-state.json / *-pmd-analyzer-state.json) */
@@ -230,7 +228,6 @@ public final class Config {
             fullDetail = detail.equals("full");
             duplicates = Boolean.parseBoolean(get(p, "complexity.duplicates", "false"));
             nearDuplicates = Boolean.parseBoolean(get(p, "complexity.duplicates.near", "false"));
-            markdown = Boolean.parseBoolean(get(p, "complexity.markdown", "false"));
             workers = Integer.parseInt(get(p, "complexity.workers", "0").trim());
             if (workers < 0) throw new IllegalArgumentException("complexity.workers 0 veya pozitif olmalı: " + workers);
             riskProfile = get(p, "complexity.risk.profile", "").trim();
