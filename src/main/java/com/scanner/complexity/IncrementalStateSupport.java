@@ -11,10 +11,9 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 20: kalite tavanı karmaşıklık 50'den sonra iner; dört kritik hata tavanın yarısına düşer.
-     * Eski önbellek bu kalite puanlarını taşımaz.
+     * 21: kalite tavanı risk 39'da 100'dür ve kesintisiz iner. Eski önbellek 50'deki sıçramayı taşır.
      */
-    static final int CACHE_SCHEMA_VERSION = 20;
+    static final int CACHE_SCHEMA_VERSION = 21;
 
     private IncrementalStateSupport() {
     }
