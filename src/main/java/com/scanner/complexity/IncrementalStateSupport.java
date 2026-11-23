@@ -11,9 +11,9 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 24: aynı stil kuralı 64 adette durmaz, fazlası karekökle sürer. Eski önbellek bu puanları taşımaz.
+     * 25: ham düşüş 100'ü geçince kalite 0. Eski önbellek bu puanları taşımaz.
      */
-    static final int CACHE_SCHEMA_VERSION = 24;
+    static final int CACHE_SCHEMA_VERSION = 25;
 
     private IncrementalStateSupport() {
     }

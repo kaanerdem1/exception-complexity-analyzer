@@ -214,7 +214,7 @@ public final class HealthScoreEngine {
                 + "uçta pay ikiye katlanır, toplam 100'de durur; "
                 + "kalite = 100 - düşüş (kritik 15, yüksek 10, orta 6; "
                 + "stil kuralları 15, 10, 8, 7, 3, 2, sonrası 1; 64 adette basamak dolar, fazlası karekökle sürer; "
-                + "ham düşüş 60'a kadar birebir, sonrası yavaşlar ve 0'a yapışmaz; "
+                + "ham düşüş 100'ü geçince kalite 0; "
                 + "aynı kuralın tekrarı karekökle sürer, 16 adette bir dilim daha dolar ve durmaz; boş catch adet başı 10, 4 adette 40, sonrası 2'şer; "
                 + "ihlalsiz kalite tavanı risk 39'da 100'dür ve risk arttıkça birebir iner; dört kritik hata tavanın yarısına iner; "
                 + "stil düşüşü tavan uygulandıktan sonra da kalır); "
@@ -275,12 +275,6 @@ public final class HealthScoreEngine {
         return modules;
     }
 
-    /**
-     * Ham düşüş bu değere kadar kaliteden birebir iner. Üstü yavaşlar ve 0'a yapışmaz.
-     * 60'ta kalite 40'tır. Kalan 40 puan, her 58 ham puanda yaklaşık 1/e oranında erir.
-     */
-    private static final double QUALITY_LINEAR_UNTIL = 60;
-    private static final double QUALITY_TAIL = 58;
     /** Bu kadar adet bir stil basamağını doldurur. Fazlası aynı karekökle sürer, durmaz. */
     private static final int LOW_QUALITY_FULL_HITS = 64;
     /** İlk ihlalden sonraki adet bu kadar olunca bir dilim daha eklenir. 16 adet, iki ayrı kurala denktir. */
@@ -444,11 +438,10 @@ public final class HealthScoreEngine {
         double capped = capQualityForComplexity(complexityRisk, defectQuality, defectDrop, notes, explainTotal);
         double quality = round(Math.max(0, capped - styleDrop));
         if (explainTotal && styleDrop <= 0 && Math.abs(quality - defectQuality) < 0.001) {
-            if (defectDrop <= QUALITY_LINEAR_UNTIL) {
+            if (defectDrop <= 100) {
                 notes.add("kalite " + quality + " = 100 - " + round(defectDrop));
             } else {
-                notes.add("ham düşüş " + round(defectDrop) + ", " + (int) QUALITY_LINEAR_UNTIL
-                        + " üstü yavaşlar, kalite " + quality);
+                notes.add("ham düşüş " + round(defectDrop) + ", kalite 0");
             }
         } else if (explainTotal && styleDrop > 0 && capped + 0.001 < defectQuality) {
             notes.add("stil düşüşü " + round(styleDrop) + " tavanın altında kaldı");
@@ -486,14 +479,9 @@ public final class HealthScoreEngine {
     private record StyleHit(Rule rule, Signals signals, int hits, double fill) {
     }
 
-    /** 60'a kadar birebir. Sonrası kalan puanı eritir, sıfıra yapıştırmaz. */
+    /** 100'e kadar birebir iner. Üstü 0 yazılır. */
     private static double softenQuality(double rawDeduction) {
-        if (rawDeduction <= QUALITY_LINEAR_UNTIL) {
-            return round(Math.max(0, 100.0 - rawDeduction));
-        }
-        double remaining = (100.0 - QUALITY_LINEAR_UNTIL)
-                * Math.exp(-(rawDeduction - QUALITY_LINEAR_UNTIL) / QUALITY_TAIL);
-        return round(remaining);
+        return round(Math.max(0, 100.0 - rawDeduction));
     }
 
     /** Satırları 3 ondalığa yuvarlar; son satır toplamı tutturur. */
