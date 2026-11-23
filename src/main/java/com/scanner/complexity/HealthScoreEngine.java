@@ -213,7 +213,7 @@ public final class HealthScoreEngine {
         String formula = "karmaşıklık = risk kalemlerinin toplamı; tavanı aşan sayım logaritmik artar, "
                 + "uçta pay ikiye katlanır, toplam 100'de durur; "
                 + "kalite = 100 - düşüş (kritik 15, yüksek 10, orta 6; "
-                + "stil kuralları 15, 10, 8, 7, 3, 2, sonrası 1; 64 adette dolar; "
+                + "stil kuralları 15, 10, 8, 7, 3, 2, sonrası 1; 64 adette basamak dolar, fazlası karekökle sürer; "
                 + "ham düşüş 60'a kadar birebir, sonrası yavaşlar ve 0'a yapışmaz; "
                 + "aynı kuralın tekrarı karekökle sürer, 16 adette bir dilim daha dolar ve durmaz; boş catch adet başı 10, 4 adette 40, sonrası 2'şer; "
                 + "ihlalsiz kalite tavanı risk 39'da 100'dür ve risk arttıkça birebir iner; dört kritik hata tavanın yarısına iner; "
@@ -281,7 +281,7 @@ public final class HealthScoreEngine {
      */
     private static final double QUALITY_LINEAR_UNTIL = 60;
     private static final double QUALITY_TAIL = 58;
-    /** Bu kadar adet, bir stil kuralının kendi basamağını doldurur. Adet karekökle artar. */
+    /** Bu kadar adet bir stil basamağını doldurur. Fazlası aynı karekökle sürer, durmaz. */
     private static final int LOW_QUALITY_FULL_HITS = 64;
     /** İlk ihlalden sonraki adet bu kadar olunca bir dilim daha eklenir. 16 adet, iki ayrı kurala denktir. */
     private static final int EXTRA_HITS_FULL = 15;
@@ -365,7 +365,8 @@ public final class HealthScoreEngine {
 
     /**
      * Kalite 100'den başlar. Kritik ilk ihlal 15, yüksek 10, orta 6.
-     * Stil kuralları doluysa 15, 10, 8, 7, 3, 2 ve sonrası 1 puan düşer. 64 adet bir basamağı doldurur.
+     * Stil kuralları doluysa 15, 10, 8, 7, 3, 2 ve sonrası 1 puan düşer.
+     * 64 adet basamağı doldurur, aynı kuralın fazlası karekökle sürer.
      * Aynı kuralın 16. adedi bir dilim daha düşer ve durmaz. İki ayrı kurala denktir.
      * Boş catch adet başı 10, 4 adette 40, her fazlası 2. Risk formülü buna eklenmez.
      * İhlalsiz kalite tavanı risk 39'da 100'dür ve risk arttıkça birebir iner. Dört kritik hata tavanın yarısına iner.
@@ -393,7 +394,7 @@ public final class HealthScoreEngine {
                     && hitsForRule > 0
                     && rule.penalty() >= 100;
             if (style) {
-                double fill = Math.min(1.0, Math.sqrt(hitsForRule / (double) LOW_QUALITY_FULL_HITS));
+                double fill = Math.sqrt(hitsForRule / (double) LOW_QUALITY_FULL_HITS);
                 styles.add(new StyleHit(rule, signals, hitsForRule, fill));
                 continue;
             }

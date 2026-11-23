@@ -11,10 +11,9 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 23: aynı kuralın 16. tekrarı bir dilim daha düşer ve durmaz, altıncı stil 2 ve sonrası 1,
-     * boş catch 4'ten sonra 2'şer iner, stil düşüşü tavanın altında kalır. Eski önbellek bu puanları taşımaz.
+     * 24: aynı stil kuralı 64 adette durmaz, fazlası karekökle sürer. Eski önbellek bu puanları taşımaz.
      */
-    static final int CACHE_SCHEMA_VERSION = 23;
+    static final int CACHE_SCHEMA_VERSION = 24;
 
     private IncrementalStateSupport() {
     }
