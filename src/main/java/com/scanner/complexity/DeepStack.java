@@ -10,7 +10,7 @@ final class DeepStack {
     /** Derin servis sınıfları varsayılan 512KB–1MB yığına sığmıyor. */
     static final long STANDARD = 16L << 20;
     static final long TALL = 32L << 20;
-    /** Dosya ağacı kurulurken sırayla denenen yığınlar. 32MB Collateral servislerinde yetmedi. */
+    /** Dosya ağacı ve metot metriği aynı merdiveni kullanır. 32MB Collateral servislerinde yetmedi. */
     static final long[] FILE_ATTEMPTS = {STANDARD, TALL, 64L << 20, 128L << 20};
 
     @FunctionalInterface
@@ -56,5 +56,20 @@ final class DeepStack {
                     "Ölçüm iş parçacığı yığın taşmasıyla durdu. Dosyanın diğer metotları sürer.");
         }
         return box.value;
+    }
+
+    /** 16 MB yeterse biter. Taşarsa 32, 64 ve 128 MB denenir. Başka hata tekrar denenmez. */
+    static <T> T callGrowing(Task<T> task) throws Exception {
+        VirtualMachineError last = null;
+        for (long stack : FILE_ATTEMPTS) {
+            try {
+                return call(stack, task);
+            } catch (VirtualMachineError overflow) {
+                last = overflow;
+            }
+        }
+        throw last == null
+                ? new StackOverflowError("Yığın denemesi sonuç vermedi.")
+                : last;
     }
 }

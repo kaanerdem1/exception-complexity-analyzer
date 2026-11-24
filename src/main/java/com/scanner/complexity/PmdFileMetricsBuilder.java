@@ -55,21 +55,17 @@ final class PmdFileMetricsBuilder {
                             boolean attachDuplicateHashes, Map<String, MethodMetric> previousMethods,
                             String fileHash, List<FileError> methodLevelErrors) {
         return PmdMetricsAligner.withParseSession(languageLevel, session -> {
-            VirtualMachineError last = null;
-            for (long stack : DeepStack.FILE_ATTEMPTS) {
-                try {
-                    return DeepStack.call(stack, () -> {
-                        ASTCompilationUnit unit = session.parse(sourceText, relativePath);
-                        return buildFromUnit(relativePath, sourceText, unit, fileViolations, riskCalculator,
-                                attachDuplicateHashes, previousMethods, fileHash, methodLevelErrors);
-                    });
-                } catch (VirtualMachineError overflow) {
-                    last = overflow;
-                }
+            try {
+                return DeepStack.callGrowing(() -> {
+                    ASTCompilationUnit unit = session.parse(sourceText, relativePath);
+                    return buildFromUnit(relativePath, sourceText, unit, fileViolations, riskCalculator,
+                            attachDuplicateHashes, previousMethods, fileHash, methodLevelErrors);
+                });
+            } catch (VirtualMachineError overflow) {
+                throw new RuntimeException(relativePath
+                        + ": sözdizimi ağacı kurulamadı, metotlar ayrılamadı. Yığın 16MB, 32MB, 64MB ve 128MB denendi.",
+                        overflow);
             }
-            throw new RuntimeException(relativePath
-                    + ": sözdizimi ağacı kurulamadı, metotlar ayrılamadı. Yığın 16MB, 32MB, 64MB ve 128MB denendi.",
-                    last);
         });
     }
 
@@ -229,8 +225,8 @@ final class PmdFileMetricsBuilder {
     }
 
     /**
-     * Metot ölçümü geniş yığında yürür. Taşan parametre paydadan çıkar; metot
-     * ölçülen parametrelerle skorlanır. Dosyanın sonraki metotları sürer.
+     * Metot ölçümü 16 MB yığında yürür. Yetmezse 32, 64 ve 128 MB denenir.
+     * Dört deneme de ölürse skor yazılmaz. Dosyanın sonraki metotları sürer.
      */
     private static MethodMetric measureMethod(String relativePath, ASTExecutableDeclaration exec, String sourceText,
                                                List<PmdViolationRow> fileViolations, MetricOptions options,
@@ -239,7 +235,7 @@ final class PmdFileMetricsBuilder {
                                                List<FileError> methodLevelErrors) {
         MethodIdentity[] seen = new MethodIdentity[1];
         try {
-            return DeepStack.call(DeepStack.STANDARD, () -> {
+            return DeepStack.callGrowing(() -> {
                 seen[0] = MethodIdentity.capture(exec, sourceText);
                 return buildMethod(relativePath, exec, sourceText, fileViolations, options, riskCalculator,
                         attachDuplicateHashes, className, previousMethods, methodLevelErrors);
@@ -420,10 +416,13 @@ final class PmdFileMetricsBuilder {
         }
     }
 
-    /** Bir parametrenin yığını taşarsa null döner. Metot bu parametre olmadan skorlanır. */
+    /**
+     * Bir sayım 16 MB'de taşarsa 32, 64 ve 128 MB denenir. Dördü de ölürse null döner.
+     * Metot o sayım olmadan skorlanır.
+     */
     private static <T> T measureParameter(DeepStack.Task<T> task) {
         try {
-            return DeepStack.call(DeepStack.STANDARD, task);
+            return DeepStack.callGrowing(task);
         } catch (VirtualMachineError overflow) {
             return null;
         } catch (Exception e) {
