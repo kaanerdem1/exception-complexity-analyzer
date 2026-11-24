@@ -62,7 +62,9 @@ public record MethodMetric(
         /** Kalite skoru: yüksek = iyi. Karmaşıklık {@link #riskScore} alanındadır (yüksek = kötü). */
         double qualityScore,
         /** PDF kapsam filtresi: trivial get/set/is hem paydan hem paydadan çıkar. */
-        boolean excludedFromHealthScore) {
+        boolean excludedFromHealthScore,
+        /** quality_inputs_json. Kalite skoru ayrıca risk_inputs_json içinde durur. */
+        String qualityInputsJson) {
 
     public MethodMetric {
         halstead = halstead == null ? HalsteadMetrics.EMPTY : halstead;
@@ -73,6 +75,7 @@ public record MethodMetric(
         bodyHash = bodyHash == null ? "" : bodyHash;
         structuralHash = structuralHash == null ? "" : structuralHash;
         returnType = returnType == null ? "" : returnType;
+        qualityInputsJson = qualityInputsJson == null || qualityInputsJson.isBlank() ? "{}" : qualityInputsJson;
     }
 
     MethodMetric withImputed(boolean imputed) {
@@ -83,7 +86,7 @@ public record MethodMetric(
                 maxBooleanOperatorsInCondition, maxNestingDepth, parameterCount, godMethod, riskScore, riskLevel,
                 riskFactors, riskBreakdown, halstead, exceptionSmells, codeSmells, methodHash, analysisReused,
                 accessedFieldNames, bodyHash, structuralHash, npathComplexity, ncssCount, imputed,
-                qualityScore, excludedFromHealthScore);
+                qualityScore, excludedFromHealthScore, qualityInputsJson);
     }
 
     /** EXACT_STRUCTURE duplicate gruplama: dönüş tipi + imza (parametre tipleri). */
@@ -129,6 +132,6 @@ public record MethodMetric(
                 maxBooleanOperatorsInCondition, maxNestingDepth, parameterCount, godMethod, riskScore, riskLevel,
                 riskFactors, riskBreakdown, HalsteadMetrics.EMPTY, List.of(), List.of(), "", false, List.of(),
                 bodyHash == null ? "" : bodyHash, structuralHash == null ? "" : structuralHash, npathComplexity,
-                ncssCount, false, 0, false);
+                ncssCount, false, 0, false, "{}");
     }
 }

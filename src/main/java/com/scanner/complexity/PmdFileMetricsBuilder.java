@@ -394,6 +394,7 @@ final class PmdFileMetricsBuilder {
                 factors.add(npathFactor(cyclo, npath));
             }
             double quality = health.quality();
+            String qualityInputs = health.qualityInputsJson();
             boolean excluded = trivialBody;
             if (reuse && !previous.metricsImputed()) {
                 complexity = previous.riskScore();
@@ -402,6 +403,7 @@ final class PmdFileMetricsBuilder {
                 quality = previous.qualityScore();
                 excluded = previous.excludedFromHealthScore();
                 god = previous.godMethod();
+                qualityInputs = previous.qualityInputsJson();
             }
 
             return new MethodMetric(name, kind, signature, returnType(exec), start, end, cyclo, physical, codeLines,
@@ -410,7 +412,7 @@ final class PmdFileMetricsBuilder {
                     0, emptyCatch, counted.catchExceptionOrThrowable(),
                     0, 0, counted.maxBooleanOperatorsInCondition(), counted.maxNestingDepth(), arity, god,
                     complexity, level, factors, null, HalsteadMetrics.EMPTY, List.of(), List.of(), methodHash, reuse, List.of(),
-                    bodyHash, structuralOut, npath, ncss, !omitted.isEmpty(), quality, excluded);
+                    bodyHash, structuralOut, npath, ncss, !omitted.isEmpty(), quality, excluded, qualityInputs);
         } catch (VirtualMachineError e) {
             recordMethodMetricFailure(methodLevelErrors, relativePath, className, signature, start, end, e);
             return failedMethodStub(sourceText, name, kind, signature, returnType(exec), start, end, physical, arity,
@@ -469,7 +471,7 @@ final class PmdFileMetricsBuilder {
                 arity,
                 false, 0, null, factors, null,
                 HalsteadMetrics.EMPTY, List.of(), List.of(),
-                methodHash, reuse, List.of(), bodyHash, structuralOut, 0, 0, true, 0, true);
+                methodHash, reuse, List.of(), bodyHash, structuralOut, 0, 0, true, 0, true, "{}");
     }
 
     private static String cycloFactor(int cyclo) {
@@ -548,7 +550,7 @@ final class PmdFileMetricsBuilder {
         return new MethodMetric(name, kind, signature, returnType(exec), start, end, 1, physical, loc,
                 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, arity, false, 0.0, RiskLevel.LOW,
                 List.of("excludedFromHealthScore=true"), null, HalsteadMetrics.EMPTY, List.of(), List.of(),
-                methodHash, reuse, List.of(), bodyHash, structuralOut, 1, loc, false, 100, true);
+                methodHash, reuse, List.of(), bodyHash, structuralOut, 1, loc, false, 100, true, "{}");
     }
 
     /** PMD ihlali ile AST sayısından büyük olan. Skor ve tablo aynı adedi kullanır. */

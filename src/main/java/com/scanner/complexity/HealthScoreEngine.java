@@ -1,5 +1,8 @@
 package com.scanner.complexity;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonNull;
+import com.google.gson.JsonObject;
 import com.scanner.complexity.AnalysisReport.ClassMetric;
 import com.scanner.complexity.AnalysisReport.FileMetric;
 import com.scanner.complexity.HealthScoreCatalog.Axis;
@@ -93,7 +96,9 @@ public final class HealthScoreEngine {
             RiskLevel complexityLevel,
             double quality,
             String qualityBand,
-            List<String> notes) {
+            List<String> notes,
+            /** quality_inputs_json. riskFactors ve qualityScore aynı kalır. */
+            String qualityInputsJson) {
     }
 
     public record MethodInput(int codeLines, double complexity, double quality, boolean excluded) {
@@ -126,14 +131,15 @@ public final class HealthScoreEngine {
     public MethodScore scoreMethod(Signals signals, List<Hit> hits, boolean excluded, Set<String> omittedSignals) {
         if (excluded) {
             return new MethodScore(0, "COK_IYI", RiskLevel.LOW, 100, "COK_IYI",
-                    List.of("excludedFromHealthScore=true"));
+                    List.of("excludedFromHealthScore=true"), cleanQualityInputs());
         }
         List<String> notes = new ArrayList<>();
-        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, 0);
+        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, 0, null);
         double complexity = invert(complexityRaw);
-        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, complexity);
+        QualitySink sink = new QualitySink();
+        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, complexity, sink);
         return new MethodScore(complexity, complexityBand(complexity), complexityLevel(complexity),
-                round(qualityRaw), qualityBand(qualityRaw), List.copyOf(notes));
+                round(qualityRaw), qualityBand(qualityRaw), List.copyOf(notes), sink.json);
     }
 
     public ClassScore scoreClass(List<MethodInput> methods, List<Hit> classHits, boolean recordType) {
@@ -155,8 +161,8 @@ public final class HealthScoreEngine {
         double methodComplexity = weightSum == 0 ? 0 : complexityWeighted / weightSum;
         double methodQuality = weightSum == 0 ? 100 : qualityWeighted / weightSum;
         List<String> notes = new ArrayList<>();
-        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0);
-        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0);
+        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0, null);
+        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0, null);
         double classComplexity = invert(classComplexityRaw);
         double classQuality = classQualityRaw;
         int w1 = catalog.w1();
@@ -288,7 +294,7 @@ public final class HealthScoreEngine {
 
     private double average(Axis axis, Scope scope, Signals signals, List<Hit> hits, boolean recordType,
                            Set<String> omittedSignals, List<String> notes, boolean explainTotal,
-                           double complexityRisk) {
+                           double complexityRisk, QualitySink qualitySink) {
         List<Rule> rules = catalog.rules(axis, scope);
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Boolean> sealedOnly = new LinkedHashMap<>();
@@ -305,7 +311,7 @@ public final class HealthScoreEngine {
         }
         if (axis == Axis.QUALITY) {
             return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes, explainTotal,
-                    complexityRisk);
+                    complexityRisk, qualitySink);
         }
         double weightSum = 0;
         for (Rule rule : rules) {
@@ -369,7 +375,7 @@ public final class HealthScoreEngine {
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
                                     Set<String> omittedSignals, List<String> notes, boolean explainTotal,
-                                    double complexityRisk) {
+                                    double complexityRisk, QualitySink qualitySink) {
         List<PointLine> strong = new ArrayList<>();
         List<StyleHit> styles = new ArrayList<>();
         for (Rule rule : rules) {
@@ -410,7 +416,8 @@ public final class HealthScoreEngine {
                     drop += slice * extra;
                 }
             }
-            strong.add(new PointLine(scoreNote(rule, signals, hitsForRule), drop));
+            strong.add(new PointLine(scoreNote(rule, signals, hitsForRule), drop,
+                    rule.concept(), rule.id(), hitsForRule, qualityGroup(rule, weight, false)));
         }
         styles.sort(Comparator.comparingDouble(StyleHit::fill).reversed());
         List<PointLine> styleLines = new ArrayList<>();
@@ -421,7 +428,8 @@ public final class HealthScoreEngine {
             if (drop <= 0) {
                 continue;
             }
-            styleLines.add(new PointLine(scoreNote(hit.rule, hit.signals, hit.hits), drop));
+            styleLines.add(new PointLine(scoreNote(hit.rule, hit.signals, hit.hits), drop,
+                    hit.rule.concept(), hit.rule.id(), hit.hits, "style"));
         }
         double defectDrop = 0;
         for (PointLine line : strong) {
@@ -437,6 +445,9 @@ public final class HealthScoreEngine {
         double defectQuality = softenQuality(defectDrop);
         double capped = capQualityForComplexity(complexityRisk, defectQuality, defectDrop, notes, explainTotal);
         double quality = round(Math.max(0, capped - styleDrop));
+        if (qualitySink != null) {
+            qualitySink.json = qualityInputsJson(quality, complexityRisk, defectQuality, capped, strong, styleLines);
+        }
         if (explainTotal && styleDrop <= 0 && Math.abs(quality - defectQuality) < 0.001) {
             if (defectDrop <= 100) {
                 notes.add("kalite " + quality + " = 100 - " + round(defectDrop));
@@ -479,6 +490,149 @@ public final class HealthScoreEngine {
     private record StyleHit(Rule rule, Signals signals, int hits, double fill) {
     }
 
+    /** Metot kalite JSON'u. Sınıf skoru bunu doldurmaz. */
+    private static final class QualitySink {
+        String json = cleanQualityInputs();
+    }
+
+    private static String cleanQualityInputs() {
+        return qualityInputsJson(100, "kalite 100", 0, 0, 0, null, 0, 0, 0, 0, new JsonArray());
+    }
+
+    private static String qualityGroup(Rule rule, int weight, boolean style) {
+        if ("EmptyCatchBlock".equals(rule.id())) {
+            return "emptyCatch";
+        }
+        if (style) {
+            return "style";
+        }
+        if (weight >= 10) {
+            return "critical";
+        }
+        if (weight >= 6) {
+            return "high";
+        }
+        if (weight >= 3) {
+            return "medium";
+        }
+        return "other";
+    }
+
+    /** Kuralların görünen düşüşü, tavan ve sıfır tabanı. riskFactors metni değişmez. */
+    private static String qualityInputsJson(double quality, double complexityRisk, double defectQuality, double capped,
+                                            List<PointLine> strong, List<PointLine> styleLines) {
+        JsonArray rules = new JsonArray();
+        int critical = 0;
+        int high = 0;
+        int medium = 0;
+        int style = 0;
+        double defectShown = 0;
+        double styleShown = 0;
+        for (PointLine line : strong) {
+            if (line.shown <= 0) {
+                continue;
+            }
+            defectShown = round(defectShown + line.shown);
+            critical += countOf(line, "critical");
+            high += countOf(line, "high");
+            medium += countOf(line, "medium");
+            rules.add(ruleJson(line));
+        }
+        for (PointLine line : styleLines) {
+            if (line.shown <= 0) {
+                continue;
+            }
+            styleShown = round(styleShown + line.shown);
+            style += line.hits;
+            rules.add(ruleJson(line));
+        }
+        double rawShown = round(defectShown + styleShown);
+        boolean ceilingBound = capped + 0.001 < defectQuality;
+        double limit = round(Math.min(100.0, Math.max(0, QUALITY_CEILING_BASE - complexityRisk)));
+        JsonObject ceiling = null;
+        if (ceilingBound) {
+            ceiling = new JsonObject();
+            ceiling.addProperty("complexity", round(complexityRisk));
+            ceiling.addProperty("limit", limit);
+            ceiling.addProperty("taken", round(defectQuality - capped));
+        }
+        String why = qualityWhy(quality, rawShown, ceilingBound, complexityRisk, limit, capped, styleShown);
+        return qualityInputsJson(quality, why, defectShown, styleShown, rawShown, ceiling, critical, high, medium, style, rules);
+    }
+
+    private static int countOf(PointLine line, String group) {
+        return group.equals(line.group) ? line.hits : 0;
+    }
+
+    private static JsonObject ruleJson(PointLine line) {
+        JsonObject rule = new JsonObject();
+        rule.addProperty("name", line.name);
+        rule.addProperty("id", line.id);
+        rule.addProperty("hits", line.hits);
+        rule.addProperty("drop", line.shown);
+        rule.addProperty("group", line.group);
+        return rule;
+    }
+
+    private static String qualityWhy(double quality, double rawShown, boolean ceilingBound, double complexityRisk,
+                                     double limit, double capped, double styleShown) {
+        if (quality <= 0 && rawShown >= 100) {
+            return "ham düşüş " + round(rawShown) + ", kalite 0";
+        }
+        if (rawShown <= 0 && !ceilingBound) {
+            return "kalite " + round(quality);
+        }
+        if (rawShown <= 0 && ceilingBound) {
+            return "karmaşıklık " + round(complexityRisk) + " için kalite tavanı " + round(limit);
+        }
+        StringBuilder why = new StringBuilder();
+        double defectShown = round(rawShown - styleShown);
+        if (defectShown > 0) {
+            why.append("hata düşüşü ").append(defectShown);
+        }
+        if (ceilingBound) {
+            if (!why.isEmpty()) {
+                why.append(", ");
+            }
+            why.append("karmaşıklık ").append(round(complexityRisk))
+                    .append(" için kalite tavanı ").append(round(limit))
+                    .append(", tavan sonrası ").append(round(capped));
+        }
+        if (styleShown > 0) {
+            if (!why.isEmpty()) {
+                why.append(", ");
+            }
+            why.append("stil düşüşü ").append(styleShown);
+        }
+        if (!why.isEmpty()) {
+            why.append(", ");
+        }
+        why.append("kalite ").append(round(quality));
+        return why.toString();
+    }
+
+    private static String qualityInputsJson(double score, String why, double defectDrop, double styleDrop, double rawDrop,
+                                            JsonObject ceiling, int critical, int high, int medium, int style,
+                                            JsonArray rules) {
+        JsonObject o = new JsonObject();
+        o.addProperty("score", score);
+        o.addProperty("why", why);
+        o.addProperty("defectDrop", defectDrop);
+        o.addProperty("styleDrop", styleDrop);
+        o.addProperty("rawDrop", rawDrop);
+        if (ceiling == null) {
+            o.add("ceiling", JsonNull.INSTANCE);
+        } else {
+            o.add("ceiling", ceiling);
+        }
+        o.addProperty("critical", critical);
+        o.addProperty("high", high);
+        o.addProperty("medium", medium);
+        o.addProperty("style", style);
+        o.add("rules", rules);
+        return o.toString();
+    }
+
     /** 100'e kadar birebir iner. Üstü 0 yazılır. */
     private static double softenQuality(double rawDeduction) {
         return round(Math.max(0, 100.0 - rawDeduction));
@@ -500,6 +654,7 @@ public final class HealthScoreEngine {
             if (i < parts.size() - 1) {
                 acc = round(acc + shown);
             }
+            parts.get(i).shown = shown;
             if (shown > 0) {
                 notes.add(parts.get(i).text + label + shown);
             }
@@ -527,7 +682,27 @@ public final class HealthScoreEngine {
         return note;
     }
 
-    private record PointLine(String text, double exact) {
+    private static final class PointLine {
+        final String text;
+        final double exact;
+        final String name;
+        final String id;
+        final int hits;
+        final String group;
+        double shown;
+
+        PointLine(String text, double exact) {
+            this(text, exact, "", "", 0, "");
+        }
+
+        PointLine(String text, double exact, String name, String id, int hits, String group) {
+            this.text = text;
+            this.exact = exact;
+            this.name = name;
+            this.id = id;
+            this.hits = hits;
+            this.group = group;
+        }
     }
 
     private static double qualitySlice(int weight) {

@@ -1038,17 +1038,22 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
         }
         String table = db.methodRiskTable;
         boolean qualityColumn = hasColumn(table, "quality_score");
+        boolean qualityInputsColumn = hasColumn(table, "quality_inputs_json");
         boolean repoColumns = hasColumn(table, "project_key") && hasColumn(table, "repo");
         String sql = "INSERT INTO " + table
                 + " (scan_run_id, method_uid, file_path, class_name, method_signature, start_line, end_line, is_parser,"
                 + " is_pmd, ncss_loc, risk_score, risk_level"
                 + (qualityColumn ? ", quality_score" : "")
-                + ", risk_inputs_json, body_hash, structural_hash, java_method_id, created_at"
+                + ", risk_inputs_json"
+                + (qualityInputsColumn ? ", quality_inputs_json" : "")
+                + ", body_hash, structural_hash, java_method_id, created_at"
                 + (repoColumns ? ", project_key, repo" : "")
                 + ", file_hash) SELECT ?, method_uid, file_path, class_name, method_signature, start_line, end_line,"
                 + " is_parser, is_pmd, ncss_loc, risk_score, risk_level"
                 + (qualityColumn ? ", quality_score" : "")
-                + ", risk_inputs_json, body_hash, structural_hash, java_method_id, now()"
+                + ", risk_inputs_json"
+                + (qualityInputsColumn ? ", quality_inputs_json" : "")
+                + ", body_hash, structural_hash, java_method_id, now()"
                 + (repoColumns ? ", project_key, repo" : "")
                 + ", file_hash FROM " + table
                 + " WHERE scan_run_id = ? AND file_path = ANY(?)"
@@ -1157,15 +1162,19 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
         if (!qualityColumn) {
             ci.warnings.add(table + ".quality_score yok; sql/method_risk_quality_score.sql çalıştırılınca kalite skoru da yazılır");
         }
+        boolean qualityInputsColumn = hasColumn(table, "quality_inputs_json");
         boolean fileHashColumn = hasColumn(table, "file_hash");
         PreparedStatement ps = con.prepareStatement("INSERT INTO " + table
                 + " (scan_run_id, method_uid, file_path, class_name, method_signature, start_line, end_line, is_parser,"
                 + " is_pmd, ncss_loc, risk_score, risk_level"
                 + (qualityColumn ? ", quality_score" : "")
-                + ", risk_inputs_json, body_hash, structural_hash, java_method_id,"
+                + ", risk_inputs_json"
+                + (qualityInputsColumn ? ", quality_inputs_json" : "")
+                + ", body_hash, structural_hash, java_method_id,"
                 + " created_at" + (repoColumns ? ", project_key, repo" : "")
                 + (fileHashColumn ? ", file_hash" : "")
-                + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?" + (qualityColumn ? ",?" : "") + ",?::jsonb,?,?,?,now()"
+                + ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?" + (qualityColumn ? ",?" : "") + ",?::jsonb"
+                + (qualityInputsColumn ? ",?::jsonb" : "") + ",?,?,?,now()"
                 + (repoColumns ? ",?,?" : "") + (fileHashColumn ? ",?" : "") + ")"
                 + " ON CONFLICT (scan_run_id, method_uid, is_parser, is_pmd) DO NOTHING");
         int count = 0;
@@ -1199,6 +1208,9 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
                     }
                 }
                 ps.setString(i++, com.scanner.complexity.ComplexityJson.riskInputs(report, row.method));
+                if (qualityInputsColumn) {
+                    ps.setString(i++, qualityInputsJson(row.method));
+                }
                 ps.setString(i++, row.method.bodyHash());
                 ps.setString(i++, row.method.structuralHash());
                 setLong(ps, i++, row.ref.dbMethodId);
@@ -1240,6 +1252,15 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
             this.ref = ref;
             this.uid = uid;
         }
+    }
+
+    /** Ölçülemeyen metotta skor yoktur. Ölçülende kalite düşüşünün kendisi yazılır. */
+    private static String qualityInputsJson(com.scanner.complexity.MethodMetric method) {
+        if (method.metricsImputed()) {
+            return "{\"status\":\"ölçülemedi\"}";
+        }
+        String json = method.qualityInputsJson();
+        return json == null || json.isBlank() ? "{}" : json;
     }
 
     /** DÜŞÜK skor ve basit getter/setter env.method_risk_analyze'e yazılmaz. */
