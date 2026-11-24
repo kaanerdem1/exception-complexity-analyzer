@@ -63,7 +63,7 @@ public final class ComplexityRunner {
 
     private Result pmd(Path sourceRoot, Path baseName) throws IOException {
         lastUnchanged = List.of();
-        RiskCalculator risk = RiskProfileLoader.createCalculator(profile("enterprise-java-pmd"), null);
+        RiskCalculator risk = RiskProfileLoader.createCalculator(profile("enterprise-java-pmd"));
         Path ruleset = Files.createTempFile("pmd-ruleset-", ".xml");
         Path violations = Files.createTempFile("pmd-violations-", ".xml");
         try {

@@ -6,7 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Turns raw metrics into a normalised 0–100 technical risk score (YAML profile-driven).
+ * Eski karışım kabuğu. Metot puanı health-score-catalog.yaml ile hesaplanır.
+ * Buradaki yuvarlama ve 0–100 tavanı özet satırlarda durur.
  */
 public final class RiskCalculator {
 
@@ -34,7 +35,7 @@ public final class RiskCalculator {
 
     private final RiskProfile profile;
 
-    /** Varsayılan: {@link RiskProfileLoader#DEFAULT_PROFILE_ID} (YAML). */
+    /** Varsayılan profil adı. Skor dosyası okunmaz. */
     public RiskCalculator() {
         this(RiskProfileLoader.loadDefaultProfile());
     }

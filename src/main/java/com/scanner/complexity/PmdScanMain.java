@@ -48,8 +48,7 @@ public final class PmdScanMain {
                 return 1;
             }
             logTargets(options);
-            RiskCalculator calculator = RiskProfileLoader.createCalculator(
-                    options.riskProfile(), options.riskConfig());
+            RiskCalculator calculator = RiskProfileLoader.createCalculator(options.riskProfile());
             AnalysisReport report = new PmdNativeProjectScanner(
                     options.charset(), options.languageLevel(), options.scanOptions(), options.top(), calculator,
                     options.ruleset(), options.violationsXml(), options.runRulesetPhase())
@@ -103,7 +102,6 @@ public final class PmdScanMain {
                   --detail=full|summary    summary = dosya özeti, metod ağacı yok
                   --no-default-ignores     target/build atlama kapalı
                   --risk-profile=<id>    enterprise-java-pmd (varsayılan, skor health-score-catalog)
-                  --risk-config=<file>   risk YAML (varsayılan config/risk-parameters-proposal.yaml)
                   --ruleset=<file>         Aşama 1 ruleset (vars: config/pmd-ruleset-complexity.xml)
                   --violations-xml=<file>  Aşama 1 pmd.xml (vars: JSON adi -violations.xml)
                   --skip-pmd-ruleset       Yalnizca metrik hatti (ruleset kapali)
@@ -116,7 +114,7 @@ public final class PmdScanMain {
 
     private record Options(Path path, Path output, int top, Charset charset,
                            ParserConfiguration.LanguageLevel languageLevel, ScanOptions scanOptions,
-                           String riskProfile, Path riskConfig, Path ruleset, Path violationsXml,
+                           String riskProfile, Path ruleset, Path violationsXml,
                            boolean runRulesetPhase, ScanPipeline pipeline, boolean compact, boolean help) {
 
         static Options parse(String[] args) {
@@ -134,7 +132,6 @@ public final class PmdScanMain {
             boolean help = false;
             boolean noDefaultIgnores = false;
             String riskProfile = "enterprise-java-pmd";
-            Path riskConfig = Path.of("config/risk-parameters-proposal.yaml");
             Path ruleset = Path.of("config/pmd-ruleset-complexity.xml");
             Path violationsXml = null;
             boolean runRulesetPhase = true;
@@ -171,8 +168,6 @@ public final class PmdScanMain {
                     noDefaultIgnores = true;
                 } else if (arg.startsWith("--risk-profile=")) {
                     riskProfile = value(arg);
-                } else if (arg.startsWith("--risk-config=")) {
-                    riskConfig = optionalPath(arg, "--risk-config");
                 } else if (arg.startsWith("--ruleset=")) {
                     ruleset = Paths.get(value(arg));
                 } else if (arg.startsWith("--violations-xml=")) {
@@ -198,7 +193,7 @@ public final class PmdScanMain {
             ScanOptions scanOptions = ScanOptions.fromCli(includes, excludes, workers, progressEvery, detail,
                     !noDefaultIgnores, incrementalState, freshIncremental, true, 50, true, 0, false);
             return new Options(path, output, top, charset, languageLevel, scanOptions, riskProfile,
-                    riskConfig, ruleset, violationsXml, runRulesetPhase, pipeline, compact, help);
+                    ruleset, violationsXml, runRulesetPhase, pipeline, compact, help);
         }
 
         static Path violationsXmlSibling(Path jsonOutput) {

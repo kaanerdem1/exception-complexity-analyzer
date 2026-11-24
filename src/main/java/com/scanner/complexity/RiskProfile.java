@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.ToIntFunction;
 
-/** Loaded from YAML; drives {@link RiskCalculator}. */
+/** Önbellek kimliği için profil adı. Metot puanını hesaplamaz. */
 public record RiskProfile(
         String profileId,
         String modelVersion,
