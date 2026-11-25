@@ -1,6 +1,7 @@
 package com.scanner.complexity;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.scanner.complexity.AnalysisReport.ClassMetric;
@@ -134,10 +135,10 @@ public final class HealthScoreEngine {
                     List.of("excludedFromHealthScore=true"), cleanQualityInputs());
         }
         List<String> notes = new ArrayList<>();
-        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, 0, null);
+        double complexityRaw = average(Axis.COMPLEXITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, null);
         double complexity = invert(complexityRaw);
         QualitySink sink = new QualitySink();
-        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, complexity, sink);
+        double qualityRaw = average(Axis.QUALITY, Scope.METHOD, signals, hits, false, omittedSignals, notes, true, sink);
         return new MethodScore(complexity, complexityBand(complexity), complexityLevel(complexity),
                 round(qualityRaw), qualityBand(qualityRaw), List.copyOf(notes), sink.json);
     }
@@ -161,8 +162,8 @@ public final class HealthScoreEngine {
         double methodComplexity = weightSum == 0 ? 0 : complexityWeighted / weightSum;
         double methodQuality = weightSum == 0 ? 100 : qualityWeighted / weightSum;
         List<String> notes = new ArrayList<>();
-        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0, null);
-        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, 0, null);
+        double classComplexityRaw = average(Axis.COMPLEXITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, null);
+        double classQualityRaw = average(Axis.QUALITY, Scope.CLASS, Signals(0), classHits, recordType, Set.of(), notes, false, null);
         double classComplexity = invert(classComplexityRaw);
         double classQuality = classQualityRaw;
         int w1 = catalog.w1();
@@ -222,8 +223,7 @@ public final class HealthScoreEngine {
                 + "stil kuralları 15, 10, 8, 7, 3, 2, sonrası 1; 64 adette basamak dolar, fazlası karekökle sürer; "
                 + "ham düşüş 100'ü geçince kalite 0; "
                 + "aynı kuralın tekrarı karekökle sürer, 16 adette bir dilim daha dolar ve durmaz; boş catch adet başı 10, 4 adette 40, sonrası 2'şer; "
-                + "ihlalsiz kalite tavanı risk 39'da 100'dür ve risk arttıkça birebir iner; dört kritik hata tavanın yarısına iner; "
-                + "stil düşüşü tavan uygulandıktan sonra da kalır); "
+                + "karmaşıklık kaliteyi kesmez); "
                 + "sınıf = (w1*satır ağırlıklı metot + w2*sınıf kuralları)/(w1+w2); w1=" + catalog.w1()
                 + " w2=" + catalog.w2()
                 + "; metrik kolonları count'tur, complexityScore ve qualityScore puandır";
@@ -287,14 +287,10 @@ public final class HealthScoreEngine {
     private static final int EXTRA_HITS_FULL = 15;
     /** Dolu stil kuralları bu sırayla düşer. Altıncı 2, yedinci ve sonrası 1 puandır. */
     private static final double[] STYLE_STEPS = {15, 10, 8, 7, 3, 2};
-    /** İhlalsiz tavan = min(100, bu değer - risk). Risk 39'da 100, 50'de 89, 100'de 39. */
-    private static final double QUALITY_CEILING_BASE = 139;
-    /** Dört kritik hata hamda 60 düşer. Tavan altındaki hata payı bu ölçeğe sığar. */
-    private static final double QUALITY_DEFECT_SPAN = 60;
 
     private double average(Axis axis, Scope scope, Signals signals, List<Hit> hits, boolean recordType,
                            Set<String> omittedSignals, List<String> notes, boolean explainTotal,
-                           double complexityRisk, QualitySink qualitySink) {
+                           QualitySink qualitySink) {
         List<Rule> rules = catalog.rules(axis, scope);
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Boolean> sealedOnly = new LinkedHashMap<>();
@@ -311,7 +307,7 @@ public final class HealthScoreEngine {
         }
         if (axis == Axis.QUALITY) {
             return qualityDeduction(rules, signals, counts, sealedOnly, recordType, omittedSignals, notes, explainTotal,
-                    complexityRisk, qualitySink);
+                    qualitySink);
         }
         double weightSum = 0;
         for (Rule rule : rules) {
@@ -368,14 +364,13 @@ public final class HealthScoreEngine {
      * Stil kuralları doluysa 15, 10, 8, 7, 3, 2 ve sonrası 1 puan düşer.
      * 64 adet basamağı doldurur, aynı kuralın fazlası karekökle sürer.
      * Aynı kuralın 16. adedi bir dilim daha düşer ve durmaz. İki ayrı kurala denktir.
-     * Boş catch adet başı 10, 4 adette 40, her fazlası 2. Risk formülü buna eklenmez.
-     * İhlalsiz kalite tavanı risk 39'da 100'dür ve risk arttıkça birebir iner. Dört kritik hata tavanın yarısına iner.
-     * Stil düşüşü bu tavandan sonra da iner.
+     * Boş catch adet başı 10, 4 adette 40, her fazlası 2. Karmaşıklık kaliteyi kesmez.
+     * Stil düşüşü hata düşüşünden sonra iner.
      */
     private double qualityDeduction(List<Rule> rules, Signals signals, Map<String, Integer> counts,
                                     Map<String, Boolean> sealedOnly, boolean recordType,
                                     Set<String> omittedSignals, List<String> notes, boolean explainTotal,
-                                    double complexityRisk, QualitySink qualitySink) {
+                                    QualitySink qualitySink) {
         List<PointLine> strong = new ArrayList<>();
         List<StyleHit> styles = new ArrayList<>();
         for (Rule rule : rules) {
@@ -443,19 +438,16 @@ public final class HealthScoreEngine {
         all.addAll(styleLines);
         writeBalanced(all, notes, " düşüş=", false);
         double defectQuality = softenQuality(defectDrop);
-        double capped = capQualityForComplexity(complexityRisk, defectQuality, defectDrop, notes, explainTotal);
-        double quality = round(Math.max(0, capped - styleDrop));
+        double quality = round(Math.max(0, defectQuality - styleDrop));
         if (qualitySink != null) {
-            qualitySink.json = qualityInputsJson(quality, complexityRisk, defectQuality, capped, strong, styleLines);
+            qualitySink.json = qualityInputsJson(quality, strong, styleLines);
         }
-        if (explainTotal && styleDrop <= 0 && Math.abs(quality - defectQuality) < 0.001) {
+        if (explainTotal && styleDrop <= 0) {
             if (defectDrop <= 100) {
                 notes.add("kalite " + quality + " = 100 - " + round(defectDrop));
             } else {
                 notes.add("ham düşüş " + round(defectDrop) + ", kalite 0");
             }
-        } else if (explainTotal && styleDrop > 0 && capped + 0.001 < defectQuality) {
-            notes.add("stil düşüşü " + round(styleDrop) + " tavanın altında kaldı");
         }
         return quality;
     }
@@ -466,25 +458,6 @@ public final class HealthScoreEngine {
             return STYLE_STEPS[index];
         }
         return 1;
-    }
-
-    /**
-     * İhlalsiz kalite tavanı risk 39'da 100'dür, sonra birebir iner: 50'de 89, 73'te 66, 75'te 64, 90'da 49, 100'de 39.
-     * Dört kritik hata bu tavanın yarısına iner. Bir kritik hata o aralığın dörtte biri kadar görünür.
-     * Stil bu tavana girmez; çağıran tavan sonucundan stil düşüşünü çıkarır.
-     */
-    private static double capQualityForComplexity(double complexityRisk, double quality, double defectDrop,
-                                                  List<String> notes, boolean explain) {
-        double ceiling = Math.min(100.0, Math.max(0, QUALITY_CEILING_BASE - complexityRisk));
-        double anchor = ceiling / 2.0;
-        double shown = defectDrop <= 0
-                ? Math.min(quality, ceiling)
-                : Math.min(quality, ceiling - (ceiling - anchor) / QUALITY_DEFECT_SPAN * defectDrop);
-        shown = round(Math.max(0, Math.min(ceiling, shown)));
-        if (explain && shown + 0.001 < quality) {
-            notes.add("karmaşıklık " + round(complexityRisk) + " için kalite tavanı " + round(ceiling));
-        }
-        return shown;
     }
 
     private record StyleHit(Rule rule, Signals signals, int hits, double fill) {
@@ -518,8 +491,9 @@ public final class HealthScoreEngine {
         return "other";
     }
 
-    /** Kuralların görünen düşüşü, tavan ve sıfır tabanı. riskFactors metni değişmez. */
-    private static String qualityInputsJson(double quality, double complexityRisk, double defectQuality, double capped,
+    /** Kuralların görünen düşüşü ve sıfır tabanı. riskFactors metni değişmez.
+     *  steps ve show, ekranın basacağı yoldur. Karmaşıklık bu puana girmez. */
+    private static String qualityInputsJson(double quality,
                                             List<PointLine> strong, List<PointLine> styleLines) {
         JsonArray rules = new JsonArray();
         int critical = 0;
@@ -547,17 +521,8 @@ public final class HealthScoreEngine {
             rules.add(ruleJson(line));
         }
         double rawShown = round(defectShown + styleShown);
-        boolean ceilingBound = capped + 0.001 < defectQuality;
-        double limit = round(Math.min(100.0, Math.max(0, QUALITY_CEILING_BASE - complexityRisk)));
-        JsonObject ceiling = null;
-        if (ceilingBound) {
-            ceiling = new JsonObject();
-            ceiling.addProperty("complexity", round(complexityRisk));
-            ceiling.addProperty("limit", limit);
-            ceiling.addProperty("taken", round(defectQuality - capped));
-        }
-        String why = qualityWhy(quality, rawShown, ceilingBound, complexityRisk, limit, capped, styleShown);
-        return qualityInputsJson(quality, why, defectShown, styleShown, rawShown, ceiling, critical, high, medium, style, rules);
+        String why = qualityWhy(quality, rawShown, styleShown);
+        return qualityInputsJson(quality, why, defectShown, styleShown, rawShown, null, critical, high, medium, style, rules);
     }
 
     private static int countOf(PointLine line, String group) {
@@ -571,32 +536,45 @@ public final class HealthScoreEngine {
         rule.addProperty("hits", line.hits);
         rule.addProperty("drop", line.shown);
         rule.addProperty("group", line.group);
+        rule.addProperty("label", ScoreSheet.label(line.name));
+        rule.addProperty("kind", ScoreSheet.kind(line.group));
+        rule.addProperty("measure", Integer.toString(line.hits));
+        rule.addProperty("points", ScoreSheet.minus(line.shown));
+        rule.addProperty("detail", ScoreSheet.qualityDetail(line.name));
         return rule;
     }
 
-    private static String qualityWhy(double quality, double rawShown, boolean ceilingBound, double complexityRisk,
-                                     double limit, double capped, double styleShown) {
+    /** Ekran bu diziyi sırasıyla basar. Puanları toplamaz. */
+    private static JsonArray qualityRows(JsonArray rules) {
+        java.util.List<JsonObject> sorted = new java.util.ArrayList<>();
+        for (JsonElement element : rules) {
+            sorted.add(element.getAsJsonObject());
+        }
+        sorted.sort((left, right) -> Double.compare(right.get("drop").getAsDouble(), left.get("drop").getAsDouble()));
+        JsonArray rows = new JsonArray();
+        for (JsonObject rule : sorted) {
+            JsonObject row = new JsonObject();
+            row.addProperty("label", rule.get("label").getAsString());
+            row.addProperty("kind", rule.get("kind").getAsString());
+            row.addProperty("measure", rule.get("measure").getAsString());
+            row.addProperty("points", rule.get("points").getAsString());
+            row.addProperty("detail", rule.get("detail").getAsString());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static String qualityWhy(double quality, double rawShown, double styleShown) {
         if (quality <= 0 && rawShown >= 100) {
             return "ham düşüş " + round(rawShown) + ", kalite 0";
         }
-        if (rawShown <= 0 && !ceilingBound) {
+        if (rawShown <= 0) {
             return "kalite " + round(quality);
-        }
-        if (rawShown <= 0 && ceilingBound) {
-            return "karmaşıklık " + round(complexityRisk) + " için kalite tavanı " + round(limit);
         }
         StringBuilder why = new StringBuilder();
         double defectShown = round(rawShown - styleShown);
         if (defectShown > 0) {
             why.append("hata düşüşü ").append(defectShown);
-        }
-        if (ceilingBound) {
-            if (!why.isEmpty()) {
-                why.append(", ");
-            }
-            why.append("karmaşıklık ").append(round(complexityRisk))
-                    .append(" için kalite tavanı ").append(round(limit))
-                    .append(", tavan sonrası ").append(round(capped));
         }
         if (styleShown > 0) {
             if (!why.isEmpty()) {
@@ -629,8 +607,67 @@ public final class HealthScoreEngine {
         o.addProperty("high", high);
         o.addProperty("medium", medium);
         o.addProperty("style", style);
+        JsonArray steps = qualitySteps(score, defectDrop, styleDrop);
+        o.add("steps", steps);
+        o.addProperty("show", qualityShow(steps, score));
+        o.add("rows", qualityRows(rules));
         o.add("rules", rules);
         return o.toString();
+    }
+
+    /** Ekran bunu sırayla basar. Son after, score ile aynıdır. */
+    private static JsonArray qualitySteps(double score, double defectDrop, double styleDrop) {
+        JsonArray steps = new JsonArray();
+        double cursor = 100;
+        steps.add(qualityStep("base", "Başlangıç", null, cursor));
+        if (defectDrop > 0) {
+            cursor = round(Math.max(0, cursor - defectDrop));
+            steps.add(qualityStep("defects", "Hata düşüşü", defectDrop, cursor));
+        }
+        if (styleDrop > 0) {
+            steps.add(qualityStep("style", "Stil düşüşü", styleDrop, round(score)));
+        }
+        return steps;
+    }
+
+    private static JsonObject qualityStep(String id, String label, Double drop, double after) {
+        JsonObject step = new JsonObject();
+        step.addProperty("id", id);
+        step.addProperty("label", label);
+        if (drop == null) {
+            step.add("drop", JsonNull.INSTANCE);
+        } else {
+            step.addProperty("drop", drop);
+        }
+        step.addProperty("after", after);
+        return step;
+    }
+
+    /** Toplam satırı. 100 - kural toplamı yazılmaz. */
+    private static String qualityShow(JsonArray steps, double score) {
+        if (steps.size() <= 1) {
+            return "kalite " + ScoreSheet.comma(score);
+        }
+        StringBuilder show = new StringBuilder();
+        double cursor = 100;
+        for (int i = 1; i < steps.size(); i++) {
+            JsonObject step = steps.get(i).getAsJsonObject();
+            double drop = step.get("drop").getAsDouble();
+            double after = step.get("after").getAsDouble();
+            if (!show.isEmpty()) {
+                show.append("; ");
+            }
+            String id = step.get("id").getAsString();
+            if ("defects".equals(id)) {
+                show.append("100 − ").append(ScoreSheet.comma(drop)).append(" = ").append(ScoreSheet.comma(after));
+            } else if (round(cursor - drop) + 0.001 < after || after <= 0 && cursor - drop < -0.001) {
+                show.append("stil −").append(ScoreSheet.comma(drop)).append(", kalite ").append(ScoreSheet.comma(after));
+            } else {
+                show.append("stil −").append(ScoreSheet.comma(drop)).append(" = ").append(ScoreSheet.comma(after));
+            }
+            cursor = after;
+        }
+        return show.toString();
     }
 
     /** 100'e kadar birebir iner. Üstü 0 yazılır. */
@@ -769,8 +806,12 @@ public final class HealthScoreEngine {
         return Math.max(0, 100.0 - Math.min(100, hits * (double) penalty));
     }
 
-    /** Gerçek derinlik taşmayı belirler. Else-if kolu yalnız birinci payı, tavanı geçmeden doldurur. */
+    /** Gerçek derinlik taşmayı belirler. Else-if kolu yalnız birinci payı, tavanı geçmeden doldurur.
+     *  Servis metodu tek CSBag ile yazılır. 0 ve 1 parametre karmaşıklığa puan yazmaz. */
     private static int metricBaseValue(Rule rule, Signals signals, int value, int max) {
+        if ("parameterCount".equals(rule.signal()) && value <= 1) {
+            return 0;
+        }
         if (!"maxNestingDepth".equals(rule.signal()) || signals.elseIfChain() <= 1) {
             return value;
         }

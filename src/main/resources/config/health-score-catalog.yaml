@@ -15,9 +15,7 @@
 # Ham düşüş birebir iner. 100'ü geçince kalite 0 yazılır.
 # Aynı kuralın tekrarı karekökle sürer, 16 adette bir dilim daha dolar ve durmaz. Boş catch adet başı 10, 4 adette 40, her fazlası 2.
 # Stil kuralları doluysa sırayla 15, 10, 8, 7, 3, 2 ve sonrası 1 puan düşer. 64 adet basamağı doldurur, fazlası karekökle sürer.
-# Stil düşüşü karmaşıklık tavanından sonra da kalır.
-# İhlalsiz kalite tavanı risk 39'da 100'dür ve risk 1 arttıkça 1 düşer: 50'de 89, 75'te 64, 100'de 39.
-# Dört kritik hata tavanın yarısına iner. Risk 59'a kadar dört kritik hata 40'tadır.
+# Stil düşüşü hata düşüşünden sonra kalır. Karmaşıklık kalite puanını kesmez.
 # Risk formülü değişmez.
 
 version: health-v1
@@ -94,6 +92,7 @@ rules:
     signal: parameterCount
     metric_max: 7
     overflow_max: 20
+    # 1 parametre servisin zorunlu CSBag'idir. 0 ve 1 karmaşıklığa puan yazmaz.
     aliases: [LongParameterList, function_parameter_count]
   - id: AvoidDeeplyNestedIfStmts
     concept: nesting
@@ -256,6 +255,18 @@ rules:
     priority: high
     kind: violation
     aliases: [UnsafeCallOnNullableType, force_unwrapping]
+  - id: EqualsNull
+    concept: equals_null
+    axis: quality
+    scope: method
+    priority: critical
+    kind: violation
+  - id: ReturnEmptyCollectionRatherThanNull
+    concept: null_collection
+    axis: quality
+    scope: method
+    priority: critical
+    kind: violation
   - id: CloseResource
     concept: resource_leak
     axis: quality

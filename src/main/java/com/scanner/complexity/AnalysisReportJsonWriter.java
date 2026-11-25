@@ -7,6 +7,8 @@ import java.io.Writer;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Gson {@code toJson} yerine doğrudan {@link Writer}'a yazar; dev JSON için ek String kopyası oluşturmaz. */
 public final class AnalysisReportJsonWriter {
@@ -383,7 +385,77 @@ public final class AnalysisReportJsonWriter {
         w.endObject();
         w.endObject();
         writeStringList(w, "riskFactors", m.riskFactors());
+        writeComplexityLines(w, m.riskFactors());
         w.endObject();
+    }
+
+    private static final Pattern RISK_LINE = Pattern.compile(
+            "^(\\S+)\\s+(\\S+)\\s+(?:sayım|adet)=(\\d+)(?:\\s+tavan=(\\d+))?.*?\\brisk\\+([\\d.]+)\\s*$");
+    private static final Pattern RISK_CAP = Pattern.compile(
+            "^risk kalemleri ham ([\\d.]+), tavan (\\d+) uygulandı$");
+
+    /** Yalnız karmaşıklık puanı. Kalite düşüşü ve açıklama cümlesi bu diziye girmez.
+     *  rows ekrana hazırdır. total, satırların toplamıdır; ekran bunu yeniden toplamaz. */
+    private static void writeComplexityLines(JsonWriter w, List<String> factors) throws IOException {
+        java.util.List<ComplexityLine> lines = new java.util.ArrayList<>();
+        String cappedTotal = null;
+        if (factors != null) {
+            for (String factor : factors) {
+                String trimmed = factor.trim();
+                Matcher cap = RISK_CAP.matcher(trimmed);
+                if (cap.matches()) {
+                    double raw = Double.parseDouble(cap.group(1));
+                    int limit = Integer.parseInt(cap.group(2));
+                    if (raw > limit) {
+                        cappedTotal = "Ham toplam " + ScoreSheet.comma(raw) + ". Tavan " + limit
+                                + " olduğu için karmaşıklık skoru " + limit + ".";
+                    }
+                    continue;
+                }
+                Matcher matcher = RISK_LINE.matcher(trimmed);
+                if (!matcher.matches()) {
+                    continue;
+                }
+                Integer max = matcher.group(4) == null ? null : Integer.parseInt(matcher.group(4));
+                lines.add(new ComplexityLine(matcher.group(1), matcher.group(2),
+                        Integer.parseInt(matcher.group(3)), max, Double.parseDouble(matcher.group(5))));
+            }
+        }
+        w.name("lines");
+        w.beginArray();
+        double sum = 0;
+        for (ComplexityLine line : lines) {
+            w.beginObject();
+            w.name("name").value(line.name);
+            w.name("id").value(line.id);
+            w.name("count").value(line.count);
+            if (line.max != null) {
+                w.name("max").value(line.max);
+            }
+            w.name("points").value(line.points);
+            w.endObject();
+            sum += line.points;
+        }
+        w.endArray();
+        double lineSum = RiskCalculator.round3(sum);
+        w.name("lineSum").value(lineSum);
+        w.name("rows");
+        w.beginArray();
+        for (ComplexityLine line : lines) {
+            String plain = ScoreSheet.comma(line.points);
+            String measure = ScoreSheet.measure(line.name, line.count, line.max);
+            w.beginObject();
+            w.name("label").value(ScoreSheet.label(line.name));
+            w.name("measure").value(measure);
+            w.name("points").value(ScoreSheet.plus(line.points));
+            w.name("detail").value(ScoreSheet.complexityDetail(line.name, measure, plain));
+            w.endObject();
+        }
+        w.endArray();
+        w.name("total").value(cappedTotal != null ? cappedTotal : ScoreSheet.comma(lineSum));
+    }
+
+    private record ComplexityLine(String name, String id, int count, Integer max, double points) {
     }
 
     static String methodUid(String filePath, String className, String signature, int startLine) {

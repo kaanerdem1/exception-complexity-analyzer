@@ -11,9 +11,9 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 25: ham düşüş 100'ü geçince kalite 0. Eski önbellek bu puanları taşımaz.
+     * 27: kalite tavanı kalktı. Karmaşıklık kaliteyi kesmez. Eski önbellek bu puanları taşımaz.
      */
-    static final int CACHE_SCHEMA_VERSION = 25;
+    static final int CACHE_SCHEMA_VERSION = 27;
 
     private IncrementalStateSupport() {
     }
