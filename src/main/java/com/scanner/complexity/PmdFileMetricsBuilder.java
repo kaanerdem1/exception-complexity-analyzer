@@ -617,13 +617,11 @@ final class PmdFileMetricsBuilder {
     }
 
     /**
-     * PMD {@link ASTExecutableDeclaration#getEndLine()} often equals {@code beginLine} (signature only).
-     * Brace-match from {@code startLine} so JSON/DB {@code endLine} and duplicate hashes match the body.
+     * PMD bitişi dosyanın içinde ve başlangıçtan sonraysa olduğu gibi kalır. Çoğu metot bu yoldadır.
+     * PMD yalnız imza satırını verdiyse veya dosyada olmayan bir satır verdiyse gövde süslü parantezle bulunur.
+     * Yorum, tırnak ve metin bloğundaki parantez derinliğe girmez. Kapanış yoksa dosyanın son satırı kullanılır.
      */
     static int resolveMethodEndLine(String sourceText, int startLine, int pmdEndLine) {
-        if (pmdEndLine > startLine) {
-            return pmdEndLine;
-        }
         if (sourceText == null || sourceText.isEmpty() || startLine < 1) {
             return Math.max(startLine, pmdEndLine);
         }
@@ -631,27 +629,78 @@ final class PmdFileMetricsBuilder {
         if (startLine > lines.length) {
             return startLine;
         }
+        if (pmdEndLine > startLine && pmdEndLine <= lines.length) {
+            return pmdEndLine;
+        }
+        int matched = matchMethodBraceEnd(lines, startLine);
+        if (matched >= startLine) {
+            return matched;
+        }
+        for (int i = lines.length - 1; i >= startLine - 1; i--) {
+            if (!lines[i].trim().isEmpty()) {
+                return i + 1;
+            }
+        }
+        return startLine;
+    }
+
+    /** Kodun süslü parantezi. Yorum, karakter, metin ve metin bloğu atlanır. Bulunamazsa -1. */
+    private static int matchMethodBraceEnd(String[] lines, int startLine) {
         int depth = 0;
         boolean bodyStarted = false;
+        boolean blockComment = false;
+        boolean textBlock = false;
         for (int i = startLine - 1; i < lines.length; i++) {
             String line = lines[i];
-            boolean inString = false;
-            char stringQuote = 0;
-            for (int j = 0; j < line.length(); j++) {
-                char ch = line.charAt(j);
-                if (inString) {
-                    if (ch == '\\') {
-                        j++;
+            int j = 0;
+            int length = line.length();
+            while (j < length) {
+                if (textBlock) {
+                    int end = textBlockEnd(line, j);
+                    if (end < 0) {
+                        j = length;
                         continue;
                     }
-                    if (ch == stringQuote) {
-                        inString = false;
-                    }
+                    textBlock = false;
+                    j = end;
                     continue;
                 }
-                if (ch == '"' || ch == '\'') {
-                    inString = true;
-                    stringQuote = ch;
+                if (blockComment) {
+                    int end = line.indexOf("*/", j);
+                    if (end < 0) {
+                        j = length;
+                        continue;
+                    }
+                    blockComment = false;
+                    j = end + 2;
+                    continue;
+                }
+                char ch = line.charAt(j);
+                char next = j + 1 < length ? line.charAt(j + 1) : '\0';
+                if (ch == '/' && next == '/') {
+                    break;
+                }
+                if (ch == '/' && next == '*') {
+                    blockComment = true;
+                    j += 2;
+                    continue;
+                }
+                if (ch == '"') {
+                    if (j + 2 < length && line.charAt(j + 1) == '"' && line.charAt(j + 2) == '"') {
+                        int end = textBlockEnd(line, j + 3);
+                        if (end < 0) {
+                            textBlock = true;
+                            j = length;
+                            continue;
+                        }
+                        j = end;
+                        continue;
+                    }
+                    j = skipQuoted(line, j, '"');
+                    continue;
+                }
+                if (ch == '\'') {
+                    j = skipQuoted(line, j, '\'');
                     continue;
                 }
                 if (ch == '{') {
@@ -663,14 +712,38 @@ final class PmdFileMetricsBuilder {
                         return i + 1;
                     }
                 }
+                j++;
             }
         }
-        for (int i = lines.length - 1; i >= startLine - 1; i--) {
-            if (!lines[i].trim().isEmpty()) {
-                return i + 1;
+        return -1;
+    }
+
+    private static int skipQuoted(String line, int open, char quote) {
+        for (int j = open + 1; j < line.length(); j++) {
+            char ch = line.charAt(j);
+            if (ch == '\\') {
+                j++;
+                continue;
+            }
+            if (ch == quote) {
+                return j + 1;
             }
         }
-        return startLine;
+        return line.length();
+    }
+
+    /** Kapanan metin bloğunun hemen sonrası. Satırda kapanış yoksa -1. */
+    private static int textBlockEnd(String line, int from) {
+        for (int j = from; j + 2 < line.length(); j++) {
+            if (line.charAt(j) == '\\') {
+                j++;
+                continue;
+            }
+            if (line.charAt(j) == '"' && line.charAt(j + 1) == '"' && line.charAt(j + 2) == '"') {
+                return j + 3;
+            }
+        }
+        return -1;
     }
 
     /** Yorum ve boş satırları sayma — NCSS yoksa LOC yedek. */
