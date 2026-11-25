@@ -351,6 +351,7 @@ public final class RiskCalculator {
     }
 
     /** @deprecated use {@link #roundScore} */
+    @Deprecated
     public static double round3(double value) {
         return roundScore(value);
     }

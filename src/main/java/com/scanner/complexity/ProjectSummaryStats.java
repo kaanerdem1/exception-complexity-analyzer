@@ -84,14 +84,14 @@ final class ProjectSummaryStats {
         long methods = methodCount.sum();
         double avgCc = methods == 0 ? 0.0 : Math.round(totalCyclomatic.sum() * 100.0 / methods) / 100.0;
         double projectScore = classLocSum == 0
-                ? (weightedLocSum == 0 ? 0.0 : RiskCalculator.round3(weightedScoreSum / weightedLocSum))
-                : RiskCalculator.round3(classComplexitySum / classLocSum);
-        double projectQuality = classLocSum == 0 ? 0.0 : RiskCalculator.round3(classQualitySum / classLocSum);
+                ? (weightedLocSum == 0 ? 0.0 : RiskCalculator.roundScore(weightedScoreSum / weightedLocSum))
+                : RiskCalculator.roundScore(classComplexitySum / classLocSum);
+        double projectQuality = classLocSum == 0 ? 0.0 : RiskCalculator.roundScore(classQualitySum / classLocSum);
         long methodLoc = totalMethodLoc.sum();
         double highLocRatio = methodLoc == 0 ? 0.0
-                : RiskCalculator.round3(highPlusCriticalLoc.sum() / (double) methodLoc);
+                : RiskCalculator.roundScore(highPlusCriticalLoc.sum() / (double) methodLoc);
         double criticalPerKloc = methodLoc == 0 ? 0.0
-                : RiskCalculator.round3(criticalMethodCount.sum() * 1000.0 / methodLoc);
+                : RiskCalculator.roundScore(criticalMethodCount.sum() * 1000.0 / methodLoc);
         Map<RiskLevel, Long> dist = new EnumMap<>(RiskLevel.class);
         for (RiskLevel level : RiskLevel.values()) {
             dist.put(level, distribution.get(level).sum());

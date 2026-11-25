@@ -103,6 +103,7 @@ final class DuplicateDetectionEngine {
     }
 
     /** @deprecated use {@link #detectExactTextDuplicates} + {@link #detectExactStructureDuplicates} */
+    @Deprecated
     List<DuplicateGroup> detectExactDuplicates(List<FileMetric> files) {
         List<DuplicateGroup> groups = new ArrayList<>();
         groups.addAll(detectExactTextDuplicates(files));

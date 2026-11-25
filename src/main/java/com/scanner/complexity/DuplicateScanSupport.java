@@ -21,7 +21,8 @@ final class DuplicateScanSupport {
             return List.of();
         }
         List<DuplicateGroup> groups = new ArrayList<>();
-        groups.addAll(ENGINE.detectExactDuplicates(files));
+        groups.addAll(ENGINE.detectExactTextDuplicates(files));
+        groups.addAll(ENGINE.detectExactStructureDuplicates(files));
         if (shouldRunNearMiss(scanOptions, files.size())) {
             try {
                 groups.addAll(ENGINE.detectNearMissDuplicates(

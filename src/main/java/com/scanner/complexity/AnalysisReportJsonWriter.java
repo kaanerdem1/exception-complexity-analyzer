@@ -351,8 +351,8 @@ public final class AnalysisReportJsonWriter {
             w.name("qualityScore").nullValue();
             w.name("status").value("ölçülemedi");
         } else {
-            w.name("complexityScore").value(RiskCalculator.round3(m.riskScore()));
-            w.name("qualityScore").value(RiskCalculator.round3(m.qualityScore()));
+            w.name("complexityScore").value(RiskCalculator.roundScore(m.riskScore()));
+            w.name("qualityScore").value(RiskCalculator.roundScore(m.qualityScore()));
         }
         w.name("npathCapped").value(!m.metricsImputed() && m.npathComplexity() >= PmdMetricsAligner.NPATH_CAP);
         w.name("units");
@@ -438,7 +438,7 @@ public final class AnalysisReportJsonWriter {
             sum += line.points;
         }
         w.endArray();
-        double lineSum = RiskCalculator.round3(sum);
+        double lineSum = RiskCalculator.roundScore(sum);
         w.name("lineSum").value(lineSum);
         w.name("rows");
         w.beginArray();
