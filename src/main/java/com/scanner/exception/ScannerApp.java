@@ -484,7 +484,8 @@ public final class ScannerApp {
     /**
      * Exception taramasından sonra klonlanmış her repoda kod karmaşıklığı analizi yapar (complexity.enabled=true).
      * Skorlar env.method_risk_analyze tablosuna yazılır. Rapor json, ihlal xml ve summary.md üretilmez.
-     * file_hash kolonu varsa değişmeyen dosya önceki taramadan kopyalanır ve analyzer-state yazılmaz.
+     * file_hash kolonu varsa ve önceki tarama bugünkü formül sürümünü taşıyorsa değişmeyen dosya kopyalanır.
+     * Sürüm yoksa veya eskiyse hash silinmez, dosya yeniden ölçülür. analyzer-state yazılmaz.
      * Kolon yoksa analyzer-state durur. job.json ve scan.log durur. Bir reponun analizi hata verirse diğerleri devam eder.
      * scanRunId varsa sonuçlar bu taramaya bağlı yazılır; her repo kendi transaction'ında.
      */
@@ -515,10 +516,18 @@ public final class ScannerApp {
                 if (scanRunId != null) {
                     try (PostgresExporter pg = new PostgresExporter(cfg)) {
                         if (pg.hasFileHashColumn()) {
-                            previousHashedScan = pg.previousHashedScan(scanRunId, repo);
+                            long hashed = pg.previousHashedScan(scanRunId, repo);
+                            boolean sameScore = hashed >= 0 && pg.hashedScanMatchesScore(
+                                    hashed, repo, com.scanner.complexity.HealthScoreEngine.scoreSchema());
+                            previousHashedScan = sameScore ? hashed : -1L;
                             runner.databaseFileHashes(previousHashedScan < 0
                                     ? java.util.Map.of()
                                     : pg.fileHashes(previousHashedScan, repo));
+                            if (hashed >= 0 && !sameScore) {
+                                log(String.format("[%d/%d] %s: formül sürümü önceki taramayla aynı değil, "
+                                        + "dosya hash'i duruyor, dosyalar yeniden ölçülecek",
+                                        done, results.size(), repo.id()));
+                            }
                         } else {
                             runner.clearDatabaseFileHashes();
                         }

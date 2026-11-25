@@ -33,6 +33,11 @@ public final class HealthScoreEngine {
         this.catalog = catalog;
     }
 
+    /** Dosya hash kopyasının kabul ettiği formül sürümü. Eski satırlarda bu alan yoktur. */
+    public static int scoreSchema() {
+        return IncrementalStateSupport.CACHE_SCHEMA_VERSION;
+    }
+
     public static HealthScoreEngine get() {
         HealthScoreEngine current = DEFAULT;
         if (current != null) {

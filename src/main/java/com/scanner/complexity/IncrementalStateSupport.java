@@ -11,7 +11,9 @@ import java.util.Map;
 final class IncrementalStateSupport {
 
     /**
-     * 27: kalite tavanı kalktı. Karmaşıklık kaliteyi kesmez. Eski önbellek bu puanları taşımaz.
+     * 27: kalite tavanı kalktı. Karmaşıklık kaliteyi kesmez.
+     * Bu sürüm risk_inputs_json.schema olarak da yazılır. Dosya hash'i aynı olsa bile
+     * önceki taramada sürüm yoksa veya eskiyse satır kopyalanmaz, dosya yeniden ölçülür.
      */
     static final int CACHE_SCHEMA_VERSION = 27;
 

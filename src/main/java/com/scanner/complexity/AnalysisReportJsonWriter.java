@@ -343,6 +343,7 @@ public final class AnalysisReportJsonWriter {
             throws IOException {
         w.name("riskInputs");
         w.beginObject();
+        w.name("schema").value(IncrementalStateSupport.CACHE_SCHEMA_VERSION);
         w.name("profile").value(profileVersion == null ? "" : profileVersion);
         w.name("pipeline").value(pipeline);
         if (m.metricsImputed()) {

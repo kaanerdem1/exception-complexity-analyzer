@@ -999,6 +999,37 @@ public final class PostgresExporter implements DbCatalog, AutoCloseable {
         }
     }
 
+    /**
+     * Bu taramadaki hash'li satırların hepsi bugünkü formül sürümünü taşır.
+     * Sürüm yoksa veya karışıksa false: hash durur, dosya yeniden ölçülür.
+     */
+    public boolean hashedScanMatchesScore(long scanId, com.scanner.exception.model.RepoInfo repo, int schema)
+            throws SQLException {
+        boolean repoColumns = hasColumn(db.methodRiskTable, "project_key") && hasColumn(db.methodRiskTable, "repo");
+        String sql = "SELECT count(*) > 0 AND count(*) = count(*) FILTER (WHERE risk_inputs_json->>'schema' = ?)"
+                + " FROM " + db.methodRiskTable
+                + " WHERE scan_run_id = ? AND file_hash IS NOT NULL"
+                + (repoColumns ? " AND project_key = ? AND repo = ?" : "");
+        PreparedStatement ps = con.prepareStatement(sql);
+        try {
+            int i = 1;
+            ps.setString(i++, Integer.toString(schema));
+            ps.setLong(i++, scanId);
+            if (repoColumns) {
+                ps.setString(i++, repo.projectKey);
+                ps.setString(i, repo.slug);
+            }
+            ResultSet rs = ps.executeQuery();
+            try {
+                return rs.next() && rs.getBoolean(1);
+            } finally {
+                rs.close();
+            }
+        } finally {
+            ps.close();
+        }
+    }
+
     /** Dosya yolu → hash. Aynı yolda birden fazla hash varsa o dosya atlanır, yeniden ölçülür. */
     public Map<String, String> fileHashes(long scanId, com.scanner.exception.model.RepoInfo repo) throws SQLException {
         boolean repoColumns = hasColumn(db.methodRiskTable, "project_key") && hasColumn(db.methodRiskTable, "repo");
